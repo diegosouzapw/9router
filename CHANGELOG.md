@@ -20,8 +20,8 @@
 - Fixed GitHub Copilot model mapping/selection issues (`95fd950`).
 - Hardened local DB behavior with corrupt JSON recovery and schema-shape migration safeguards (`e6ef852`).
 - Fixed logout/login edge cases:
-  - prevent unintended auto-login after logout (`49df3dc`)
-  - avoid infinite loading on failed `/api/settings` responses (`01c9410`)
+  - Prevent unintended auto-login after logout (`49df3dc`)
+  - Avoid infinite loading on failed `/api/settings` responses (`01c9410`)
 
 # v0.2.56 (2026-02-04)
 
