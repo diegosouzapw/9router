@@ -5,6 +5,8 @@
   
   **Never stop coding. Auto-route to FREE & cheap AI models with smart fallback.**
   
+  **28 Providers • Embeddings • Image Generation • Think Tag Parsing**
+  
   **Free AI Provider for OpenClaw.**
   
   <p align="center">
@@ -50,15 +52,17 @@
 ┌─────────────────────────────────────────┐
 │           9Router (Smart Router)        │
 │  • Format translation (OpenAI ↔ Claude) │
-│  • Quota tracking                       │
+│  • Quota tracking + Embeddings + Images │
 │  • Auto token refresh                   │
 └──────┬──────────────────────────────────┘
        │
        ├─→ [Tier 1: SUBSCRIPTION] Claude Code, Codex, Gemini CLI
        │   ↓ quota exhausted
-       ├─→ [Tier 2: CHEAP] GLM ($0.6/1M), MiniMax ($0.2/1M)
+       ├─→ [Tier 2: API KEY] DeepSeek, Groq, xAI, Mistral, Together, etc.
        │   ↓ budget limit
-       └─→ [Tier 3: FREE] iFlow, Qwen, Kiro (unlimited)
+       ├─→ [Tier 3: CHEAP] GLM ($0.6/1M), MiniMax ($0.2/1M)
+       │   ↓ budget limit
+       └─→ [Tier 4: FREE] iFlow, Qwen, Kiro (unlimited)
 
 Result: Never stop coding, minimal cost
 ```
@@ -117,18 +121,22 @@ Default URLs:
 
 ## 💡 Key Features
 
-| Feature                         | What It Does                               | Why It Matters                   |
-| ------------------------------- | ------------------------------------------ | -------------------------------- |
-| 🎯 **Smart 3-Tier Fallback**    | Auto-route: Subscription → Cheap → Free    | Never stop coding, zero downtime |
-| 📊 **Real-Time Quota Tracking** | Live token count + reset countdown         | Maximize subscription value      |
-| 🔄 **Format Translation**       | OpenAI ↔ Claude ↔ Gemini seamless          | Works with any CLI tool          |
-| 👥 **Multi-Account Support**    | Multiple accounts per provider             | Load balancing + redundancy      |
-| 🔄 **Auto Token Refresh**       | OAuth tokens refresh automatically         | No manual re-login needed        |
-| 🎨 **Custom Combos**            | Create unlimited model combinations        | Tailor fallback to your needs    |
-| 📝 **Request Logging**          | Debug mode with full request/response logs | Troubleshoot issues easily       |
-| 💾 **Cloud Sync**               | Sync config across devices                 | Same setup everywhere            |
-| 📊 **Usage Analytics**          | Track tokens, cost, trends over time       | Optimize spending                |
-| 🌐 **Deploy Anywhere**          | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options      |
+| Feature                          | What It Does                               | Why It Matters                      |
+| -------------------------------- | ------------------------------------------ | ----------------------------------- |
+| 🎯 **Smart 3-Tier Fallback**     | Auto-route: Subscription → Cheap → Free    | Never stop coding, zero downtime    |
+| 📊 **Real-Time Quota Tracking**  | Live token count + reset countdown         | Maximize subscription value         |
+| 🔄 **Format Translation**        | OpenAI ↔ Claude ↔ Gemini seamless          | Works with any CLI tool             |
+| 👥 **Multi-Account Support**     | Multiple accounts per provider             | Load balancing + redundancy         |
+| 🔄 **Auto Token Refresh**        | OAuth tokens refresh automatically         | No manual re-login needed           |
+| 🎨 **Custom Combos**             | Create unlimited model combinations        | Tailor fallback to your needs       |
+| 🧩 **Custom Models**             | Add any model ID to any provider           | No app update needed for new models |
+| 🛣️ **Dedicated Provider Routes** | Per-provider API endpoints                 | Direct routing, model validation    |
+| 🌐 **Network Proxy**             | Global + per-provider outbound proxy       | Works behind firewalls/VPNs         |
+| 📋 **Model Catalog API**         | All models grouped by provider + type      | Discover available models easily    |
+| 📝 **Request Logging**           | Debug mode with full request/response logs | Troubleshoot issues easily          |
+| 💾 **Cloud Sync**                | Sync config across devices                 | Same setup everywhere               |
+| 📊 **Usage Analytics**           | Track tokens, cost, trends over time       | Optimize spending                   |
+| 🌐 **Deploy Anywhere**           | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options         |
 
 <details>
 <summary><b>📖 Feature Details</b></summary>
@@ -222,18 +230,28 @@ Seamless translation between formats:
 
 ## 💰 Pricing at a Glance
 
-| Tier                | Provider          | Cost       | Quota Reset      | Best For           |
-| ------------------- | ----------------- | ---------- | ---------------- | ------------------ |
-| **💳 SUBSCRIPTION** | Claude Code (Pro) | $20/mo     | 5h + weekly      | Already subscribed |
-|                     | Codex (Plus/Pro)  | $20-200/mo | 5h + weekly      | OpenAI users       |
-|                     | Gemini CLI        | **FREE**   | 180K/mo + 1K/day | Everyone!          |
-|                     | GitHub Copilot    | $10-19/mo  | Monthly          | GitHub users       |
-| **💰 CHEAP**        | GLM-4.7           | $0.6/1M    | Daily 10AM       | Budget backup      |
-|                     | MiniMax M2.1      | $0.2/1M    | 5-hour rolling   | Cheapest option    |
-|                     | Kimi K2           | $9/mo flat | 10M tokens/mo    | Predictable cost   |
-| **🆓 FREE**         | iFlow             | $0         | Unlimited        | 8 models free      |
-|                     | Qwen              | $0         | Unlimited        | 3 models free      |
-|                     | Kiro              | $0         | Unlimited        | Claude free        |
+| Tier                | Provider          | Cost        | Quota Reset      | Best For             |
+| ------------------- | ----------------- | ----------- | ---------------- | -------------------- |
+| **💳 SUBSCRIPTION** | Claude Code (Pro) | $20/mo      | 5h + weekly      | Already subscribed   |
+|                     | Codex (Plus/Pro)  | $20-200/mo  | 5h + weekly      | OpenAI users         |
+|                     | Gemini CLI        | **FREE**    | 180K/mo + 1K/day | Everyone!            |
+|                     | GitHub Copilot    | $10-19/mo   | Monthly          | GitHub users         |
+| **🔑 API KEY**      | DeepSeek          | Pay per use | None             | Cheap reasoning      |
+|                     | Groq              | Pay per use | None             | Ultra-fast inference |
+|                     | xAI (Grok)        | Pay per use | None             | Grok 4 reasoning     |
+|                     | Mistral           | Pay per use | None             | EU-hosted models     |
+|                     | Perplexity        | Pay per use | None             | Search-augmented     |
+|                     | Together AI       | Pay per use | None             | Open-source models   |
+|                     | Fireworks AI      | Pay per use | None             | Fast FLUX images     |
+|                     | Cerebras          | Pay per use | None             | Wafer-scale speed    |
+|                     | Cohere            | Pay per use | None             | Command R+ RAG       |
+|                     | NVIDIA NIM        | Pay per use | None             | Enterprise models    |
+| **💰 CHEAP**        | GLM-4.7           | $0.6/1M     | Daily 10AM       | Budget backup        |
+|                     | MiniMax M2.1      | $0.2/1M     | 5-hour rolling   | Cheapest option      |
+|                     | Kimi K2           | $9/mo flat  | 10M tokens/mo    | Predictable cost     |
+| **🆓 FREE**         | iFlow             | $0          | Unlimited        | 8 models free        |
+|                     | Qwen              | $0          | Unlimited        | 3 models free        |
+|                     | Kiro              | $0          | Unlimited        | Claude free          |
 
 **💡 Pro Tip:** Start with Gemini CLI (180K free/month) + iFlow (unlimited free) combo = $0 cost!
 
@@ -797,6 +815,180 @@ Notes:
 - `kr/claude-sonnet-4.5`
 - `kr/claude-haiku-4.5`
 
+**DeepSeek (`ds/`)** - API Key:
+
+- `ds/deepseek-chat`
+- `ds/deepseek-reasoner`
+
+**Groq (`groq/`)** - API Key:
+
+- `groq/llama-3.3-70b-versatile`
+- `groq/llama-4-maverick-17b-128e-instruct`
+- `groq/qwen-qwq-32b`
+- `groq/gpt-oss-120b`
+
+**xAI (`xai/`)** - API Key:
+
+- `xai/grok-4`
+- `xai/grok-4-0709-fast-reasoning`
+- `xai/grok-code-mini`
+- `xai/grok-3-beta`
+
+**Mistral (`mistral/`)** - API Key:
+
+- `mistral/mistral-large-2501`
+- `mistral/codestral-2501`
+- `mistral/mistral-medium-2505`
+
+**Perplexity (`pplx/`)** - API Key:
+
+- `pplx/sonar-pro`
+- `pplx/sonar`
+
+**Together AI (`together/`)** - API Key:
+
+- `together/meta-llama/Llama-3.3-70B-Instruct-Turbo`
+- `together/deepseek-ai/DeepSeek-R1`
+- `together/Qwen/Qwen3-235B-A22B`
+
+**Fireworks AI (`fireworks/`)** - API Key:
+
+- `fireworks/accounts/fireworks/models/deepseek-v3p1`
+- `fireworks/accounts/fireworks/models/llama-v3p3-70b-instruct`
+
+**Cerebras (`cerebras/`)** - API Key:
+
+- `cerebras/llama-3.3-70b`
+- `cerebras/llama-4-scout-17b-16e-instruct`
+- `cerebras/qwen-3-32b`
+
+**Cohere (`cohere/`)** - API Key:
+
+- `cohere/command-r-plus-08-2024`
+- `cohere/command-a-03-2025`
+
+**NVIDIA NIM (`nvidia/`)** - API Key:
+
+- `nvidia/nvidia/llama-3.3-70b-instruct`
+- `nvidia/deepseek/deepseek-r1`
+
+</details>
+
+---
+
+## 🧩 Advanced Features
+
+<details>
+<summary><b>Custom Models</b></summary>
+
+Add any model ID to any provider without waiting for an app update:
+
+```bash
+# Via API
+curl -X POST http://localhost:20128/api/provider-models \
+  -H "Content-Type: application/json" \
+  -d '{"provider": "openai", "modelId": "gpt-4.5-preview", "modelName": "GPT-4.5 Preview"}'
+
+# List custom models
+curl http://localhost:20128/api/provider-models?provider=openai
+
+# Remove
+curl -X DELETE "http://localhost:20128/api/provider-models?provider=openai&model=gpt-4.5-preview"
+```
+
+Or use the Dashboard: **Providers → [Provider] → Custom Models** section.
+
+Custom models appear in `/v1/models` with `custom: true` flag.
+
+</details>
+
+<details>
+<summary><b>Dedicated Provider Routes</b></summary>
+
+Route requests directly to a specific provider with model validation:
+
+```bash
+# Chat completions for a specific provider
+curl -X POST http://localhost:20128/v1/providers/openai/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
+
+# Embeddings for a specific provider
+curl -X POST http://localhost:20128/v1/providers/openai/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{"model": "text-embedding-3-small", "input": "Hello world"}'
+
+# Image generation for a specific provider
+curl -X POST http://localhost:20128/v1/providers/fireworks/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{"model": "flux-1-schnell", "prompt": "A sunset over the ocean"}'
+```
+
+The provider prefix is auto-added if missing. Mismatched models return `400`.
+
+</details>
+
+<details>
+<summary><b>Network Proxy Configuration</b></summary>
+
+Configure outbound proxies globally or per-provider:
+
+```bash
+# Set global proxy
+curl -X PUT http://localhost:20128/api/settings/proxy \
+  -H "Content-Type: application/json" \
+  -d '{"global": "http://proxy.example.com:8080"}'
+
+# Set per-provider proxy
+curl -X PUT http://localhost:20128/api/settings/proxy \
+  -H "Content-Type: application/json" \
+  -d '{"providers": {"openai": "socks5://proxy.example.com:1080"}}'
+
+# Get current config
+curl http://localhost:20128/api/settings/proxy
+```
+
+**Precedence:** Provider-specific → Global → Environment variables (`HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`).
+
+</details>
+
+<details>
+<summary><b>Model Catalog API</b></summary>
+
+Get all available models grouped by provider with type metadata:
+
+```bash
+curl http://localhost:20128/api/models/catalog
+```
+
+Returns:
+
+```json
+{
+  "catalog": {
+    "openai": {
+      "provider": "OpenAI",
+      "active": true,
+      "models": [
+        {
+          "id": "openai/gpt-4o",
+          "name": "GPT-4o",
+          "type": "chat",
+          "custom": false
+        },
+        {
+          "id": "openai/text-embedding-3-small",
+          "type": "embedding",
+          "custom": false
+        }
+      ]
+    }
+  }
+}
+```
+
+Types: `chat`, `embedding`, `image`. Custom models are flagged with `custom: true`.
+
 </details>
 
 ---
@@ -893,13 +1085,54 @@ Content-Type: application/json
 }
 ```
 
+### Embeddings
+
+```bash
+POST http://localhost:20128/v1/embeddings
+Authorization: Bearer your-api-key
+Content-Type: application/json
+
+{
+  "model": "nebius/Qwen/Qwen3-Embedding-8B",
+  "input": "The food was delicious"
+}
+```
+
+Available embedding providers: Nebius, OpenAI, Mistral, Together AI, Fireworks, NVIDIA.
+
+```bash
+# List all embedding models
+GET http://localhost:20128/v1/embeddings
+```
+
+### Image Generation
+
+```bash
+POST http://localhost:20128/v1/images/generations
+Authorization: Bearer your-api-key
+Content-Type: application/json
+
+{
+  "model": "openai/dall-e-3",
+  "prompt": "A beautiful sunset over mountains",
+  "size": "1024x1024"
+}
+```
+
+Available image providers: OpenAI (DALL-E), xAI (Grok Image), Together AI (FLUX), Fireworks AI.
+
+```bash
+# List all image models
+GET http://localhost:20128/v1/images/generations
+```
+
 ### List Models
 
 ```bash
 GET http://localhost:20128/v1/models
 Authorization: Bearer your-api-key
 
-→ Returns all models + combos in OpenAI format
+→ Returns all chat, embedding, and image models + combos in OpenAI format
 ```
 
 ### Compatibility Endpoints
@@ -907,7 +1140,9 @@ Authorization: Bearer your-api-key
 - `POST /v1/chat/completions`
 - `POST /v1/messages`
 - `POST /v1/responses`
-- `GET /v1/models`
+- `POST /v1/embeddings` (**NEW**)
+- `POST /v1/images/generations` (**NEW**)
+- `GET /v1/models` (chat + embedding + image)
 - `POST /v1/messages/count_tokens`
 - `GET /v1beta/models`
 - `POST /v1beta/models/{...path}` (Gemini-style `generateContent`)
@@ -967,12 +1202,12 @@ Expected behavior from recent validation:
 ### Request Processing (High Level)
 
 1. Client sends request to `/v1/*`.
-2. Route handler calls `handleChat` (`src/sse/handlers/chat.js`).
+2. Route handler calls `handleChat` (`src/sse/handlers/chat.js`), `handleEmbedding`, or `handleImageGeneration`.
 3. Model is resolved (direct provider/model or alias/combo resolution).
 4. Credentials are selected from local DB with account availability filtering.
-5. `handleChatCore` (`open-sse/handlers/chatCore.js`) detects format and translates request.
+5. For chat: `handleChatCore` detects format and translates request. For embeddings/images: handler proxies directly to upstream.
 6. Provider executor sends upstream request.
-7. Stream is translated back to client format when needed.
+7. Stream is translated back to client format when needed (chat). Embeddings and images return JSON.
 8. Usage/logging is recorded (`src/lib/usageDb.js`).
 9. Fallback applies on provider/account/model errors according to combo rules.
 

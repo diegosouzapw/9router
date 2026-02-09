@@ -1,12 +1,15 @@
 {
   "name": "9router-app",
-  "version": "0.2.72",
+  "version": "0.2.73",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --port 20128",
     "build": "next build --webpack",
-    "start": "next start"
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "npm run build",
+    "check": "npm run lint && npm run test"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -29,6 +32,7 @@
     "socks-proxy-agent": "^8.0.5",
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
+    "zod": "^4.3.6",
     "zustand": "^5.0.10"
   },
   "devDependencies": {

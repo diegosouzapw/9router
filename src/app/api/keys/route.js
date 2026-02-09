@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { createKeySchema, validateBody } from "@/shared/validation/schemas";
 
 // GET /api/keys - List API keys
 export async function GET() {
@@ -18,11 +19,13 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name } = body;
 
-    if (!name) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    // Zod validation
+    const validation = validateBody(createKeySchema, body);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
+    const { name } = validation.data;
 
     // Always get machineId from server
     const machineId = await getConsistentMachineId();

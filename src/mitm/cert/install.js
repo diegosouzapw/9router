@@ -1,7 +1,7 @@
-const fs = require("fs");
-const crypto = require("crypto");
-const { exec } = require("child_process");
-const { execWithPassword } = require("../dns/dnsConfig.js");
+import fs from "fs";
+import crypto from "crypto";
+import { exec } from "child_process";
+import { execWithPassword } from "../dns/dnsConfig.js";
 
 const IS_WIN = process.platform === "win32";
 
@@ -15,7 +15,7 @@ function getCertFingerprint(certPath) {
 /**
  * Check if certificate is already installed in system store
  */
-async function checkCertInstalled(certPath) {
+export async function checkCertInstalled(certPath) {
   if (IS_WIN) {
     return checkCertInstalledWindows(certPath);
   }
@@ -47,7 +47,7 @@ function checkCertInstalledWindows(certPath) {
 /**
  * Install SSL certificate to system trust store
  */
-async function installCert(sudoPassword, certPath) {
+export async function installCert(sudoPassword, certPath) {
   if (!fs.existsSync(certPath)) {
     throw new Error(`Certificate file not found: ${certPath}`);
   }
@@ -94,7 +94,7 @@ async function installCertWindows(certPath) {
 /**
  * Uninstall SSL certificate from system store
  */
-async function uninstallCert(sudoPassword, certPath) {
+export async function uninstallCert(sudoPassword, certPath) {
   const isInstalled = await checkCertInstalled(certPath);
   if (!isInstalled) {
     console.log("Certificate not found in system store");
@@ -132,5 +132,3 @@ async function uninstallCertWindows() {
     });
   });
 }
-
-module.exports = { installCert, uninstallCert, checkCertInstalled };

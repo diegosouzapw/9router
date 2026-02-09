@@ -1,3 +1,30 @@
+# v0.2.73 (2026-02-09)
+
+## Features
+
+- Expanded provider registry from 18 → 28 providers:
+  - **Phase 1:** DeepSeek, Groq, xAI (Grok), Mistral, Perplexity — high-priority API Key providers.
+  - **Phase 4:** Together AI, Fireworks AI, Cerebras, Cohere, NVIDIA NIM — medium-priority API Key providers.
+  - All use `DefaultExecutor` with OpenAI-compatible format.
+- Added `/v1/embeddings` endpoint with 6 providers and 9 embedding models:
+  - Nebius, OpenAI, Mistral, Together AI, Fireworks AI, NVIDIA NIM.
+  - New handler (`open-sse/handlers/embeddings.js`), registry (`open-sse/config/embeddingRegistry.js`), and Next.js route.
+- Added `/v1/images/generations` endpoint with 4 providers and 9 image models:
+  - OpenAI (DALL-E), xAI (Grok Image), Together AI (FLUX), Fireworks AI.
+  - New handler (`open-sse/handlers/imageGeneration.js`), registry (`open-sse/config/imageRegistry.js`), and Next.js route.
+- Added `<think>` tag parser (`open-sse/utils/thinkTagParser.js`) for reasoning models (DeepSeek, Qwen).
+  - Supports both full-text extraction and streaming delta processing.
+- Enhanced `/v1/models` endpoint to list chat, embedding, and image models with type metadata.
+- Updated `open-sse/index.js` with exports for new handlers, registries, and utilities.
+
+## Frontend
+
+- Added "Available Endpoints" card to the Endpoint page with collapsible sections for Chat Completions (127 models), Embeddings (9 models), and Image Generation (9 models), grouped by provider.
+- Added Nebius AI to `providers.js` with icon, color, and text icon.
+- Generated 11 provider PNG icons (128×128) from SVG for all new providers.
+- Added auto-open of Add Connection modal when a provider detail page has zero connections.
+- Updated Translator debug page with all 28 providers (was missing 12).
+
 # v0.2.72 (2026-02-08)
 
 ## Features

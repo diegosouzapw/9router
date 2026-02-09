@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
+import { updateSettingsSchema, validateBody } from "@/shared/validation/schemas";
 
 export async function GET() {
   try {
@@ -22,7 +23,14 @@ export async function GET() {
 
 export async function PATCH(request) {
   try {
-    const body = await request.json();
+    const rawBody = await request.json();
+
+    // Zod validation
+    const validation = validateBody(updateSettingsSchema, rawBody);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const body = validation.data;
 
     // If updating password, hash it
     if (body.newPassword) {

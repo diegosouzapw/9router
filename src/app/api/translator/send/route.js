@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildProviderUrl, buildProviderHeaders } from "open-sse/services/provider.js";
 import { getProviderConnections } from "@/lib/localDb.js";
+import { toJsonErrorPayload } from "@/shared/utils/upstreamError";
 
 export async function POST(request) {
   try {
@@ -49,10 +50,14 @@ export async function POST(request) {
     if (!response.ok) {
       const errorText = await response.text();
       console.log("🚀 ~ POST ~ errorText:", errorText)
+      const normalizedUpstreamError = toJsonErrorPayload(
+        errorText,
+        `Provider error: ${response.status} ${response.statusText}`
+      );
       return NextResponse.json({ 
         success: false, 
-        error: `Provider error: ${response.status} ${response.statusText}`,
-        details: errorText
+        error: normalizedUpstreamError.error?.message || `Provider error: ${response.status} ${response.statusText}`,
+        details: normalizedUpstreamError
       }, { status: response.status });
     }
 

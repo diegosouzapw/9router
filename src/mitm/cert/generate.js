@@ -1,13 +1,13 @@
-const path = require("path");
-const fs = require("fs");
-const os = require("os");
+import path from "path";
+import fs from "fs";
+import os from "os";
 
 const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
 
 /**
  * Generate self-signed SSL certificate using selfsigned (pure JS, no openssl needed)
  */
-async function generateCert() {
+export async function generateCert() {
   const certDir = path.join(os.homedir(), ".9router", "mitm");
   const keyPath = path.join(certDir, "server.key");
   const certPath = path.join(certDir, "server.crt");
@@ -21,7 +21,8 @@ async function generateCert() {
     fs.mkdirSync(certDir, { recursive: true });
   }
 
-  const selfsigned = require("selfsigned");
+  // Dynamic import for optional dependency
+  const { default: selfsigned } = await import("selfsigned");
   const attrs = [{ name: "commonName", value: TARGET_HOST }];
   const notAfter = new Date();
   notAfter.setFullYear(notAfter.getFullYear() + 1);
@@ -40,5 +41,3 @@ async function generateCert() {
   console.log(`✅ Generated SSL certificate for ${TARGET_HOST}`);
   return { key: keyPath, cert: certPath };
 }
-
-module.exports = { generateCert };

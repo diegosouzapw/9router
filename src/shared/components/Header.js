@@ -5,7 +5,13 @@ import Link from "next/link";
 import Image from "next/image";
 import PropTypes from "prop-types";
 import { ThemeToggle } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
+import {
+  OAUTH_PROVIDERS,
+  APIKEY_PROVIDERS,
+  FREE_PROVIDERS,
+  OPENAI_COMPATIBLE_PREFIX,
+  ANTHROPIC_COMPATIBLE_PREFIX,
+} from "@/shared/constants/providers";
 
 const getPageInfo = (pathname) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
@@ -14,7 +20,11 @@ const getPageInfo = (pathname) => {
   const providerMatch = pathname.match(/\/providers\/([^/]+)$/);
   if (providerMatch) {
     const providerId = providerMatch[1];
-    const providerInfo = OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId];
+    const providerInfo =
+      OAUTH_PROVIDERS[providerId] ||
+      FREE_PROVIDERS[providerId] ||
+      APIKEY_PROVIDERS[providerId];
+
     if (providerInfo) {
       return {
         title: providerInfo.name,
@@ -23,6 +33,28 @@ const getPageInfo = (pathname) => {
           { label: "Providers", href: "/dashboard/providers" },
           { label: providerInfo.name, image: `/providers/${providerInfo.id}.png` }
         ]
+      };
+    }
+
+    if (providerId.startsWith(OPENAI_COMPATIBLE_PREFIX)) {
+      return {
+        title: "OpenAI Compatible",
+        description: "",
+        breadcrumbs: [
+          { label: "Providers", href: "/dashboard/providers" },
+          { label: "OpenAI Compatible", image: "/providers/oai-cc.png" },
+        ],
+      };
+    }
+
+    if (providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX)) {
+      return {
+        title: "Anthropic Compatible",
+        description: "",
+        breadcrumbs: [
+          { label: "Providers", href: "/dashboard/providers" },
+          { label: "Anthropic Compatible", image: "/providers/anthropic-m.png" },
+        ],
       };
     }
   }
@@ -139,4 +171,3 @@ Header.propTypes = {
   onMenuClick: PropTypes.func,
   showMenuButton: PropTypes.bool,
 };
-

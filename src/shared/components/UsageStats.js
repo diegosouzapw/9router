@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import { useSearchParams, useRouter } from "next/navigation";
 import Card from "./Card";
@@ -51,7 +51,7 @@ export default function UsageStats() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [viewMode, setViewMode] = useState("tokens"); // 'tokens' or 'costs'
   const [refreshInterval, setRefreshInterval] = useState(5000); // Start with 5s
-  const [prevTotalRequests, setPrevTotalRequests] = useState(0);
+  const prevTotalRequestsRef = useRef(0);
 
   const toggleSort = (field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -138,21 +138,21 @@ export default function UsageStats() {
 
         // Smart polling: adjust interval based on activity
         const currentTotal = data.totalRequests || 0;
-        if (currentTotal > prevTotalRequests) {
+        if (currentTotal > prevTotalRequestsRef.current) {
           // New requests detected - reset to fast polling
           setRefreshInterval(5000);
         } else {
           // No change - increase interval (exponential backoff)
           setRefreshInterval((prev) => Math.min(prev * 2, 60000)); // Max 60s
         }
-        setPrevTotalRequests(currentTotal);
+        prevTotalRequestsRef.current = currentTotal;
       }
     } catch (error) {
       console.error("Failed to fetch usage stats:", error);
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [prevTotalRequests]);
+  }, []);
 
   useEffect(() => {
     fetchStats();

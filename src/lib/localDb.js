@@ -5,7 +5,10 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 
-const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
+// Detect Cloudflare Workers / edge runtime.
+// Workers expose a `caches` global (CacheStorage). In Node.js this is undefined.
+const isCloud =
+  typeof globalThis.caches === "object" && globalThis.caches !== null;
 
 // Get app name - fixed constant to avoid Windows path issues in standalone build
 function getAppName() {
@@ -110,6 +113,35 @@ function ensureDbShape(data) {
   return { data: next, changed };
 }
 
+// ---------- Write Lock (Mutex) ----------
+// Prevents race conditions by processing read-modify-write operations sequentially.
+// LowDB is synchronous in memory but async on disk. Without this lock, concurrent
+// requests could read stale data, modify it, and overwrite each other's changes.
+
+let mutexPromise = Promise.resolve();
+
+/**
+ * Execute a function with exclusive access to the database (Read-Modify-Write cycle).
+ * @param {Function} callback - Async function that gets exclusive access
+ * @returns {Promise<any>} Result of the callback
+ */
+async function withWriteLock(callback) {
+  // Enqueue the callback
+  const resultPromise = mutexPromise.then(async () => {
+    try {
+      return await callback();
+    } catch (error) {
+      console.error("[DB] Write lock error:", error);
+      throw error;
+    }
+  });
+
+  // Advance the queue tail, ensuring we catch errors so the queue doesn't stall
+  mutexPromise = resultPromise.catch(() => {});
+  
+  return resultPromise;
+}
+
 // Singleton instance
 let dbInstance = null;
 
@@ -210,87 +242,94 @@ export async function getProviderNodeById(id) {
  * Create provider node
  */
 export async function createProviderNode(data) {
-  const db = await getDb();
-  
-  // Initialize providerNodes if undefined (backward compatibility)
-  if (!db.data.providerNodes) {
-    db.data.providerNodes = [];
-  }
-  
-  const now = new Date().toISOString();
+  return withWriteLock(async () => {
+    const db = await getDb();
+    
+    if (!db.data.providerNodes) {
+      db.data.providerNodes = [];
+    }
+    
+    const now = new Date().toISOString();
 
-  const node = {
-    id: data.id || uuidv4(),
-    type: data.type,
-    name: data.name,
-    prefix: data.prefix,
-    apiType: data.apiType,
-    baseUrl: data.baseUrl,
-    createdAt: now,
-    updatedAt: now,
-  };
+    const node = {
+      id: data.id || uuidv4(),
+      type: data.type,
+      name: data.name,
+      prefix: data.prefix,
+      apiType: data.apiType,
+      baseUrl: data.baseUrl,
+      createdAt: now,
+      updatedAt: now,
+    };
 
-  db.data.providerNodes.push(node);
-  await db.write();
+    db.data.providerNodes.push(node);
+    await db.write();
 
-  return node;
+    return node;
+  });
 }
 
 /**
  * Update provider node
  */
 export async function updateProviderNode(id, data) {
-  const db = await getDb();
-  if (!db.data.providerNodes) {
-    db.data.providerNodes = [];
-  }
-  
-  const index = db.data.providerNodes.findIndex((node) => node.id === id);
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.providerNodes) {
+      db.data.providerNodes = [];
+    }
+    
+    const index = db.data.providerNodes.findIndex((node) => node.id === id);
 
-  if (index === -1) return null;
+    if (index === -1) return null;
 
-  db.data.providerNodes[index] = {
-    ...db.data.providerNodes[index],
-    ...data,
-    updatedAt: new Date().toISOString(),
-  };
+    db.data.providerNodes[index] = {
+      ...db.data.providerNodes[index],
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
 
-  await db.write();
+    await db.write();
 
-  return db.data.providerNodes[index];
+    return db.data.providerNodes[index];
+  });
 }
 
 /**
  * Delete provider node
  */
 export async function deleteProviderNode(id) {
-  const db = await getDb();
-  if (!db.data.providerNodes) {
-    db.data.providerNodes = [];
-  }
-  
-  const index = db.data.providerNodes.findIndex((node) => node.id === id);
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.providerNodes) {
+      db.data.providerNodes = [];
+    }
+    
+    const index = db.data.providerNodes.findIndex((node) => node.id === id);
 
-  if (index === -1) return null;
+    if (index === -1) return null;
 
-  const [removed] = db.data.providerNodes.splice(index, 1);
-  await db.write();
+    const [removed] = db.data.providerNodes.splice(index, 1);
+    await db.write();
 
-  return removed;
+    return removed;
+  });
 }
 
 /**
  * Delete all provider connections by provider ID
  */
 export async function deleteProviderConnectionsByProvider(providerId) {
-  const db = await getDb();
-  const beforeCount = db.data.providerConnections.length;
-  db.data.providerConnections = db.data.providerConnections.filter(
-    (connection) => connection.provider !== providerId
-  );
-  const deletedCount = beforeCount - db.data.providerConnections.length;
-  await db.write();
-  return deletedCount;
+  return withWriteLock(async () => {
+    const db = await getDb();
+    const beforeCount = db.data.providerConnections.length;
+    db.data.providerConnections = db.data.providerConnections.filter(
+      (connection) => connection.provider !== providerId
+    );
+    const deletedCount = beforeCount - db.data.providerConnections.length;
+    await db.write();
+    return deletedCount;
+  });
 }
 
 /**
@@ -305,163 +344,175 @@ export async function getProviderConnectionById(id) {
  * Create or update provider connection (upsert by provider + email/name)
  */
 export async function createProviderConnection(data) {
-  const db = await getDb();
-  const now = new Date().toISOString();
-  
-  // Check for existing connection with same provider and email (for OAuth)
-  // or same provider and name (for API key)
-  let existingIndex = -1;
-  if (data.authType === "oauth" && data.email) {
-    existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === data.provider && c.authType === "oauth" && c.email === data.email
-    );
-  } else if (data.authType === "apikey" && data.name) {
-    existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === data.provider && c.authType === "apikey" && c.name === data.name
-    );
-  }
-  
-  // If exists, update instead of create
-  if (existingIndex !== -1) {
-    db.data.providerConnections[existingIndex] = {
-      ...db.data.providerConnections[existingIndex],
-      ...data,
+  return withWriteLock(async () => {
+    const db = await getDb();
+    const now = new Date().toISOString();
+    
+    // Check for existing connection with same provider and email (for OAuth)
+    // or same provider and name (for API key)
+    let existingIndex = -1;
+    if (data.authType === "oauth" && data.email) {
+      existingIndex = db.data.providerConnections.findIndex(
+        c => c.provider === data.provider && c.authType === "oauth" && c.email === data.email
+      );
+    } else if (data.authType === "apikey" && data.name) {
+      existingIndex = db.data.providerConnections.findIndex(
+        c => c.provider === data.provider && c.authType === "apikey" && c.name === data.name
+      );
+    }
+    
+    // If exists, update instead of create
+    if (existingIndex !== -1) {
+      db.data.providerConnections[existingIndex] = {
+        ...db.data.providerConnections[existingIndex],
+        ...data,
+        updatedAt: now,
+      };
+      await db.write();
+      return db.data.providerConnections[existingIndex];
+    }
+    
+    // Generate name for OAuth if not provided
+    let connectionName = data.name || null;
+    if (!connectionName && data.authType === "oauth") {
+      if (data.email) {
+        connectionName = data.email;
+      } else {
+        const existingCount = db.data.providerConnections.filter(
+          c => c.provider === data.provider
+        ).length;
+        connectionName = `Account ${existingCount + 1}`;
+      }
+    }
+
+    // Auto-increment priority if not provided
+    let connectionPriority = data.priority;
+    if (!connectionPriority) {
+      const providerConnections = db.data.providerConnections.filter(
+        c => c.provider === data.provider
+      );
+      const maxPriority = providerConnections.reduce((max, c) => Math.max(max, c.priority || 0), 0);
+      connectionPriority = maxPriority + 1;
+    }
+    
+    // Create new connection - only save fields with actual values
+    const connection = {
+      id: uuidv4(),
+      provider: data.provider,
+      authType: data.authType || "oauth",
+      name: connectionName,
+      priority: connectionPriority,
+      isActive: data.isActive !== undefined ? data.isActive : true,
+      createdAt: now,
       updatedAt: now,
     };
+
+    const optionalFields = [
+      "displayName", "email", "globalPriority", "defaultModel",
+      "accessToken", "refreshToken", "expiresAt", "tokenType",
+      "scope", "idToken", "projectId", "apiKey", "testStatus",
+      "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
+      "consecutiveUseCount"
+    ];
+    
+    for (const field of optionalFields) {
+      if (data[field] !== undefined && data[field] !== null) {
+        connection[field] = data[field];
+      }
+    }
+
+    if (data.providerSpecificData && Object.keys(data.providerSpecificData).length > 0) {
+      connection.providerSpecificData = data.providerSpecificData;
+    }
+    
+    db.data.providerConnections.push(connection);
     await db.write();
-    return db.data.providerConnections[existingIndex];
-  }
-  
-  // Generate name for OAuth if not provided
-  let connectionName = data.name || null;
-  if (!connectionName && data.authType === "oauth") {
-    if (data.email) {
-      connectionName = data.email;
-    } else {
-      // Count existing connections for this provider to generate index
-      const existingCount = db.data.providerConnections.filter(
-        c => c.provider === data.provider
-      ).length;
-      connectionName = `Account ${existingCount + 1}`;
-    }
-  }
 
-  // Auto-increment priority if not provided
-  let connectionPriority = data.priority;
-  if (!connectionPriority) {
-    const providerConnections = db.data.providerConnections.filter(
-      c => c.provider === data.provider
-    );
-    const maxPriority = providerConnections.reduce((max, c) => Math.max(max, c.priority || 0), 0);
-    connectionPriority = maxPriority + 1;
-  }
-  
-  // Create new connection - only save fields with actual values
-  const connection = {
-    id: uuidv4(),
-    provider: data.provider,
-    authType: data.authType || "oauth",
-    name: connectionName,
-    priority: connectionPriority,
-    isActive: data.isActive !== undefined ? data.isActive : true,
-    createdAt: now,
-    updatedAt: now,
-  };
+    // Reorder to ensure consistency (nested lock? no, reorder calls getDb/write too)
+    // We must call the internal logic of reorder here or call it after lock.
+    // reorderProviderConnections uses getDb() which reads from disk (safe) and writes.
+    // Ideally we should do it in the same lock or right after.
+    // Since we are in a lock, let's call the logic directly to avoid releasing lock.
+    
+    await _reorderProviderConnectionsInternal(db, data.provider);
 
-  // Only add optional fields if they have values
-  const optionalFields = [
-    "displayName", "email", "globalPriority", "defaultModel",
-    "accessToken", "refreshToken", "expiresAt", "tokenType",
-    "scope", "idToken", "projectId", "apiKey", "testStatus",
-    "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
-    "consecutiveUseCount"
-  ];
-  
-  for (const field of optionalFields) {
-    if (data[field] !== undefined && data[field] !== null) {
-      connection[field] = data[field];
-    }
-  }
-
-  // Only add providerSpecificData if it has content
-  if (data.providerSpecificData && Object.keys(data.providerSpecificData).length > 0) {
-    connection.providerSpecificData = data.providerSpecificData;
-  }
-  
-  db.data.providerConnections.push(connection);
-  await db.write();
-
-  // Reorder to ensure consistency
-  await reorderProviderConnections(data.provider);
-
-  return connection;
+    return connection;
+  });
 }
 
 /**
  * Update provider connection
  */
 export async function updateProviderConnection(id, data) {
-  const db = await getDb();
-  const index = db.data.providerConnections.findIndex(c => c.id === id);
+  return withWriteLock(async () => {
+    const db = await getDb();
+    const index = db.data.providerConnections.findIndex(c => c.id === id);
 
-  if (index === -1) return null;
+    if (index === -1) return null;
 
-  const providerId = db.data.providerConnections[index].provider;
+    const providerId = db.data.providerConnections[index].provider;
 
-  db.data.providerConnections[index] = {
-    ...db.data.providerConnections[index],
-    ...data,
-    updatedAt: new Date().toISOString(),
-  };
+    db.data.providerConnections[index] = {
+      ...db.data.providerConnections[index],
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
 
-  await db.write();
+    await db.write();
 
-  // Reorder if priority was changed
-  if (data.priority !== undefined) {
-    await reorderProviderConnections(providerId);
-  }
+    if (data.priority !== undefined) {
+      await _reorderProviderConnectionsInternal(db, providerId);
+    }
 
-  return db.data.providerConnections[index];
+    return db.data.providerConnections[index];
+  });
 }
 
 /**
  * Delete provider connection
  */
 export async function deleteProviderConnection(id) {
-  const db = await getDb();
-  const index = db.data.providerConnections.findIndex(c => c.id === id);
+  return withWriteLock(async () => {
+    const db = await getDb();
+    const index = db.data.providerConnections.findIndex(c => c.id === id);
 
-  if (index === -1) return false;
+    if (index === -1) return false;
 
-  const providerId = db.data.providerConnections[index].provider;
+    const providerId = db.data.providerConnections[index].provider;
 
-  db.data.providerConnections.splice(index, 1);
-  await db.write();
+    db.data.providerConnections.splice(index, 1);
+    await db.write();
 
-  // Reorder to fill gaps
-  await reorderProviderConnections(providerId);
+    await _reorderProviderConnectionsInternal(db, providerId);
 
-  return true;
+    return true;
+  });
 }
 
 /**
- * Reorder provider connections to ensure unique, sequential priorities
+ * Reorder provider connections (Public wrapper)
  */
 export async function reorderProviderConnections(providerId) {
-  const db = await getDb();
+  return withWriteLock(async () => {
+    const db = await getDb();
+    await _reorderProviderConnectionsInternal(db, providerId);
+  });
+}
+
+/**
+ * Internal reorder logic (reuses db instance)
+ */
+async function _reorderProviderConnectionsInternal(db, providerId) {
   if (!db.data.providerConnections) return;
 
   const providerConnections = db.data.providerConnections
     .filter(c => c.provider === providerId)
     .sort((a, b) => {
-      // Sort by priority first
       const pDiff = (a.priority || 0) - (b.priority || 0);
       if (pDiff !== 0) return pDiff;
-      // Use updatedAt as tie-breaker (newer first)
       return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
     });
 
-  // Re-assign sequential priorities
   providerConnections.forEach((conn, index) => {
     conn.priority = index + 1;
   });
@@ -471,30 +522,25 @@ export async function reorderProviderConnections(providerId) {
 
 // ============ Model Aliases ============
 
-/**
- * Get all model aliases
- */
 export async function getModelAliases() {
   const db = await getDb();
   return db.data.modelAliases || {};
 }
 
-/**
- * Set model alias
- */
 export async function setModelAlias(alias, model) {
-  const db = await getDb();
-  db.data.modelAliases[alias] = model;
-  await db.write();
+  return withWriteLock(async () => {
+    const db = await getDb();
+    db.data.modelAliases[alias] = model;
+    await db.write();
+  });
 }
 
-/**
- * Delete model alias
- */
 export async function deleteModelAlias(alias) {
-  const db = await getDb();
-  delete db.data.modelAliases[alias];
-  await db.write();
+  return withWriteLock(async () => {
+    const db = await getDb();
+    delete db.data.modelAliases[alias];
+    await db.write();
+  });
 }
 
 // ============ MITM Alias ============
@@ -507,107 +553,91 @@ export async function getMitmAlias(toolName) {
 }
 
 export async function setMitmAliasAll(toolName, mappings) {
-  const db = await getDb();
-  if (!db.data.mitmAlias) db.data.mitmAlias = {};
-  db.data.mitmAlias[toolName] = mappings || {};
-  await db.write();
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.mitmAlias) db.data.mitmAlias = {};
+    db.data.mitmAlias[toolName] = mappings || {};
+    await db.write();
+  });
 }
 
 // ============ Combos ============
 
-/**
- * Get all combos
- */
 export async function getCombos() {
   const db = await getDb();
   return db.data.combos || [];
 }
 
-/**
- * Get combo by ID
- */
 export async function getComboById(id) {
   const db = await getDb();
   return (db.data.combos || []).find(c => c.id === id) || null;
 }
 
-/**
- * Get combo by name
- */
 export async function getComboByName(name) {
   const db = await getDb();
   return (db.data.combos || []).find(c => c.name === name) || null;
 }
 
-/**
- * Create combo
- */
 export async function createCombo(data) {
-  const db = await getDb();
-  if (!db.data.combos) db.data.combos = [];
-  
-  const now = new Date().toISOString();
-  const combo = {
-    id: uuidv4(),
-    name: data.name,
-    models: data.models || [],
-    createdAt: now,
-    updatedAt: now,
-  };
-  
-  db.data.combos.push(combo);
-  await db.write();
-  return combo;
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.combos) db.data.combos = [];
+    
+    const now = new Date().toISOString();
+    const combo = {
+      id: uuidv4(),
+      name: data.name,
+      models: data.models || [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    
+    db.data.combos.push(combo);
+    await db.write();
+    return combo;
+  });
 }
 
-/**
- * Update combo
- */
 export async function updateCombo(id, data) {
-  const db = await getDb();
-  if (!db.data.combos) db.data.combos = [];
-  
-  const index = db.data.combos.findIndex(c => c.id === id);
-  if (index === -1) return null;
-  
-  db.data.combos[index] = {
-    ...db.data.combos[index],
-    ...data,
-    updatedAt: new Date().toISOString(),
-  };
-  
-  await db.write();
-  return db.data.combos[index];
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.combos) db.data.combos = [];
+    
+    const index = db.data.combos.findIndex(c => c.id === id);
+    if (index === -1) return null;
+    
+    db.data.combos[index] = {
+      ...db.data.combos[index],
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+    
+    await db.write();
+    return db.data.combos[index];
+  });
 }
 
-/**
- * Delete combo
- */
 export async function deleteCombo(id) {
-  const db = await getDb();
-  if (!db.data.combos) return false;
-  
-  const index = db.data.combos.findIndex(c => c.id === id);
-  if (index === -1) return false;
-  
-  db.data.combos.splice(index, 1);
-  await db.write();
-  return true;
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.combos) return false;
+    
+    const index = db.data.combos.findIndex(c => c.id === id);
+    if (index === -1) return false;
+    
+    db.data.combos.splice(index, 1);
+    await db.write();
+    return true;
+  });
 }
 
 // ============ API Keys ============
 
-/**
- * Get all API keys
- */
 export async function getApiKeys() {
   const db = await getDb();
   return db.data.apiKeys || [];
 }
 
-/**
- * Generate short random key (8 chars)
- */
 function generateShortKey() {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let result = "";
@@ -617,55 +647,47 @@ function generateShortKey() {
   return result;
 }
 
-/**
- * Create API key
- * @param {string} name - Key name
- * @param {string} machineId - MachineId (required)
- */
 export async function createApiKey(name, machineId) {
   if (!machineId) {
     throw new Error("machineId is required");
   }
   
-  const db = await getDb();
-  const now = new Date().toISOString();
-  
-  // Always use new format: sk-{machineId}-{keyId}-{crc8}
-  const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
-  const result = generateApiKeyWithMachine(machineId);
-  
-  const apiKey = {
-    id: uuidv4(),
-    name: name,
-    key: result.key,
-    machineId: machineId,
-    createdAt: now,
-  };
-  
-  db.data.apiKeys.push(apiKey);
-  await db.write();
-  
-  return apiKey;
+  return withWriteLock(async () => {
+    const db = await getDb();
+    const now = new Date().toISOString();
+    
+    const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
+    const result = generateApiKeyWithMachine(machineId);
+    
+    const apiKey = {
+      id: uuidv4(),
+      name: name,
+      key: result.key,
+      machineId: machineId,
+      createdAt: now,
+    };
+    
+    db.data.apiKeys.push(apiKey);
+    await db.write();
+    
+    return apiKey;
+  });
 }
 
-/**
- * Delete API key
- */
 export async function deleteApiKey(id) {
-  const db = await getDb();
-  const index = db.data.apiKeys.findIndex(k => k.id === id);
-  
-  if (index === -1) return false;
-  
-  db.data.apiKeys.splice(index, 1);
-  await db.write();
-  
-  return true;
+  return withWriteLock(async () => {
+    const db = await getDb();
+    const index = db.data.apiKeys.findIndex(k => k.id === id);
+    
+    if (index === -1) return false;
+    
+    db.data.apiKeys.splice(index, 1);
+    await db.write();
+    
+    return true;
+  });
 }
 
-/**
- * Validate API key
- */
 export async function validateApiKey(key) {
   const db = await getDb();
   return db.data.apiKeys.some(k => k.key === key);
@@ -673,66 +695,57 @@ export async function validateApiKey(key) {
 
 // ============ Data Cleanup ============
 
-/**
- * Remove null/empty fields from all provider connections to reduce db size
- */
 export async function cleanupProviderConnections() {
-  const db = await getDb();
-  const fieldsToCheck = [
-    "displayName", "email", "globalPriority", "defaultModel",
-    "accessToken", "refreshToken", "expiresAt", "tokenType",
-    "scope", "idToken", "projectId", "apiKey", "testStatus",
-    "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn",
-    "consecutiveUseCount"
-  ];
+  return withWriteLock(async () => {
+    const db = await getDb();
+    const fieldsToCheck = [
+      "displayName", "email", "globalPriority", "defaultModel",
+      "accessToken", "refreshToken", "expiresAt", "tokenType",
+      "scope", "idToken", "projectId", "apiKey", "testStatus",
+      "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn",
+      "consecutiveUseCount"
+    ];
 
-  let cleaned = 0;
-  for (const connection of db.data.providerConnections) {
-    for (const field of fieldsToCheck) {
-      if (connection[field] === null || connection[field] === undefined) {
-        delete connection[field];
+    let cleaned = 0;
+    for (const connection of db.data.providerConnections) {
+      for (const field of fieldsToCheck) {
+        if (connection[field] === null || connection[field] === undefined) {
+          delete connection[field];
+          cleaned++;
+        }
+      }
+      if (connection.providerSpecificData && Object.keys(connection.providerSpecificData).length === 0) {
+        delete connection.providerSpecificData;
         cleaned++;
       }
     }
-    // Remove empty providerSpecificData
-    if (connection.providerSpecificData && Object.keys(connection.providerSpecificData).length === 0) {
-      delete connection.providerSpecificData;
-      cleaned++;
-    }
-  }
 
-  if (cleaned > 0) {
-    await db.write();
-  }
-  return cleaned;
+    if (cleaned > 0) {
+      await db.write();
+    }
+    return cleaned;
+  });
 }
 
 // ============ Settings ============
 
-/**
- * Get settings
- */
 export async function getSettings() {
   const db = await getDb();
   return db.data.settings || { cloudEnabled: false };
 }
 
-/**
- * Update settings
- */
 export async function updateSettings(updates) {
-  const db = await getDb();
-  db.data.settings = {
-    ...db.data.settings,
-    ...updates
-  };
-  await db.write();
-  return db.data.settings;
+  return withWriteLock(async () => {
+    const db = await getDb();
+    db.data.settings = {
+      ...db.data.settings,
+      ...updates
+    };
+    await db.write();
+    return db.data.settings;
+  });
 }
 
-/**
- * Check if cloud is enabled
- */
 export async function isCloudEnabled() {
   const settings = await getSettings();
   return settings.cloudEnabled === true;
@@ -740,26 +753,16 @@ export async function isCloudEnabled() {
 
 // ============ Pricing ============
 
-/**
- * Get pricing configuration
- * Returns merged user pricing with defaults
- */
 export async function getPricing() {
   const db = await getDb();
   const userPricing = db.data.pricing || {};
-
-  // Import default pricing
   const { getDefaultPricing } = await import("@/shared/constants/pricing.js");
   const defaultPricing = getDefaultPricing();
 
-  // Merge user pricing with defaults
-  // User pricing overrides defaults for specific provider/model combinations
   const mergedPricing = {};
 
   for (const [provider, models] of Object.entries(defaultPricing)) {
     mergedPricing[provider] = { ...models };
-
-    // Apply user overrides if they exist
     if (userPricing[provider]) {
       for (const [model, pricing] of Object.entries(userPricing[provider])) {
         if (mergedPricing[provider][model]) {
@@ -771,7 +774,6 @@ export async function getPricing() {
     }
   }
 
-  // Add any user-only pricing entries
   for (const [provider, models] of Object.entries(userPricing)) {
     if (!mergedPricing[provider]) {
       mergedPricing[provider] = { ...models };
@@ -798,30 +800,17 @@ export async function getPricingForModel(provider, model) {
     return pricing[provider][model];
   }
 
-  // Try mapping provider ID to alias
-  // We need to duplicate the mapping here or import it
-  // Since we can't easily import from open-sse, we'll implement the mapping locally
-  const PROVIDER_ID_TO_ALIAS = {
-    claude: "cc",
-    codex: "cx",
-    "gemini-cli": "gc",
-    qwen: "qw",
-    iflow: "if",
-    antigravity: "ag",
-    github: "gh",
-    openai: "openai",
-    anthropic: "anthropic",
-    gemini: "gemini",
-    openrouter: "openrouter",
-    glm: "glm",
-    kimi: "kimi",
-    "kimi-coding": "kimi",
-    minimax: "minimax",
-  };
-
+  // Fallback: use generated provider ID -> alias mapping from registry.
+  const { PROVIDER_ID_TO_ALIAS } = await import("open-sse/config/providerModels.js");
   const alias = PROVIDER_ID_TO_ALIAS[provider];
   if (alias && pricing[alias]) {
     return pricing[alias][model] || null;
+  }
+
+  // Compatibility fallback for regional IDs that may reuse core pricing tables.
+  const normalizedProvider = provider?.replace(/-cn$/, "");
+  if (normalizedProvider && normalizedProvider !== provider && pricing[normalizedProvider]) {
+    return pricing[normalizedProvider][model] || null;
   }
 
   return null;
@@ -832,26 +821,26 @@ export async function getPricingForModel(provider, model) {
  * @param {object} pricingData - New pricing data to merge
  */
 export async function updatePricing(pricingData) {
-  const db = await getDb();
+  return withWriteLock(async () => {
+    const db = await getDb();
 
-  // Ensure pricing object exists
-  if (!db.data.pricing) {
-    db.data.pricing = {};
-  }
-
-  // Merge new pricing data
-  for (const [provider, models] of Object.entries(pricingData)) {
-    if (!db.data.pricing[provider]) {
-      db.data.pricing[provider] = {};
+    if (!db.data.pricing) {
+      db.data.pricing = {};
     }
 
-    for (const [model, pricing] of Object.entries(models)) {
-      db.data.pricing[provider][model] = pricing;
-    }
-  }
+    for (const [provider, models] of Object.entries(pricingData)) {
+      if (!db.data.pricing[provider]) {
+        db.data.pricing[provider] = {};
+      }
 
-  await db.write();
-  return db.data.pricing;
+      for (const [model, pricing] of Object.entries(models)) {
+        db.data.pricing[provider][model] = pricing;
+      }
+    }
+
+    await db.write();
+    return db.data.pricing;
+  });
 }
 
 /**
@@ -860,36 +849,152 @@ export async function updatePricing(pricingData) {
  * @param {string} model - Model ID (optional, if not provided resets entire provider)
  */
 export async function resetPricing(provider, model) {
-  const db = await getDb();
+  return withWriteLock(async () => {
+    const db = await getDb();
 
-  if (!db.data.pricing) {
-    db.data.pricing = {};
-  }
-
-  if (model) {
-    // Reset specific model
-    if (db.data.pricing[provider]) {
-      delete db.data.pricing[provider][model];
-      // Clean up empty provider objects
-      if (Object.keys(db.data.pricing[provider]).length === 0) {
-        delete db.data.pricing[provider];
-      }
+    if (!db.data.pricing) {
+      db.data.pricing = {};
     }
-  } else {
-    // Reset entire provider
-    delete db.data.pricing[provider];
-  }
 
-  await db.write();
-  return db.data.pricing;
+    if (model) {
+      if (db.data.pricing[provider]) {
+        delete db.data.pricing[provider][model];
+        if (Object.keys(db.data.pricing[provider]).length === 0) {
+          delete db.data.pricing[provider];
+        }
+      }
+    } else {
+      delete db.data.pricing[provider];
+    }
+
+    await db.write();
+    return db.data.pricing;
+  });
 }
 
 /**
  * Reset all pricing to defaults
  */
 export async function resetAllPricing() {
-  const db = await getDb();
-  db.data.pricing = {};
-  await db.write();
-  return db.data.pricing;
+  return withWriteLock(async () => {
+    const db = await getDb();
+    db.data.pricing = {};
+    await db.write();
+    return db.data.pricing;
+  });
 }
+
+// ============ Custom Models ============
+
+/**
+ * Get custom models for a specific provider
+ * @param {string} providerId - Provider ID (e.g., "openai", "anthropic")
+ * @returns {Array} Array of { id, name } objects
+ */
+export async function getCustomModels(providerId) {
+  const db = await getDb();
+  const all = db.data.customModels || {};
+  if (providerId) return all[providerId] || [];
+  return all;
+}
+
+/**
+ * Get all custom models grouped by provider
+ * @returns {Object} Map of providerId -> [{ id, name }]
+ */
+export async function getAllCustomModels() {
+  const db = await getDb();
+  return db.data.customModels || {};
+}
+
+/**
+ * Add a custom model to a provider
+ * @param {string} providerId - Provider ID
+ * @param {string} modelId - Model identifier
+ * @param {string} modelName - Display name (optional, defaults to modelId)
+ * @returns {Object} The added model { id, name }
+ */
+export async function addCustomModel(providerId, modelId, modelName) {
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.customModels) db.data.customModels = {};
+    if (!db.data.customModels[providerId]) db.data.customModels[providerId] = [];
+
+    // Deduplicate
+    const exists = db.data.customModels[providerId].some(m => m.id === modelId);
+    if (exists) {
+      return db.data.customModels[providerId].find(m => m.id === modelId);
+    }
+
+    const model = { id: modelId, name: modelName || modelId };
+    db.data.customModels[providerId].push(model);
+    await db.write();
+    return model;
+  });
+}
+
+/**
+ * Remove a custom model from a provider
+ * @param {string} providerId - Provider ID
+ * @param {string} modelId - Model identifier to remove
+ * @returns {boolean} true if removed
+ */
+export async function removeCustomModel(providerId, modelId) {
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.customModels?.[providerId]) return false;
+
+    const before = db.data.customModels[providerId].length;
+    db.data.customModels[providerId] = db.data.customModels[providerId].filter(m => m.id !== modelId);
+
+    // Clean up empty arrays
+    if (db.data.customModels[providerId].length === 0) {
+      delete db.data.customModels[providerId];
+    }
+
+    const removed = db.data.customModels[providerId]?.length !== before || before > 0;
+    if (removed) await db.write();
+    return removed;
+  });
+}
+
+// ============ Proxy Config ============
+
+/**
+ * Get proxy configuration
+ * @returns {Object} { global: string|null, providers: { providerId: string } }
+ */
+export async function getProxyConfig() {
+  const db = await getDb();
+  return db.data.proxyConfig || { global: null, providers: {} };
+}
+
+/**
+ * Update proxy configuration (merge)
+ * @param {Object} config - { global?: string, providers?: { providerId: string } }
+ */
+export async function setProxyConfig(config) {
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.proxyConfig) {
+      db.data.proxyConfig = { global: null, providers: {} };
+    }// Merge
+    if (config.global !== undefined) {
+      db.data.proxyConfig.global = config.global || null;
+    }
+    if (config.providers) {
+      db.data.proxyConfig.providers = {
+        ...db.data.proxyConfig.providers,
+        ...config.providers,
+      };
+      // Remove empty entries
+      for (const [k, v] of Object.entries(db.data.proxyConfig.providers)) {
+        if (!v) delete db.data.proxyConfig.providers[k];
+      }
+    }
+    await db.write();
+    return db.data.proxyConfig;
+  });
+}
+
+

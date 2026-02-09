@@ -1,6 +1,6 @@
-const { exec } = require("child_process");
-const fs = require("fs");
-const path = require("path");
+import { exec } from "child_process";
+import fs from "fs";
+import path from "path";
 
 const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
 const IS_WIN = process.platform === "win32";
@@ -11,7 +11,7 @@ const HOSTS_FILE = IS_WIN
 /**
  * Execute command with sudo password via stdin (macOS/Linux only)
  */
-function execWithPassword(command, password) {
+export function execWithPassword(command, password) {
   return new Promise((resolve, reject) => {
     const child = exec(command, (error, stdout, stderr) => {
       if (error) {
@@ -44,7 +44,7 @@ function execElevatedWindows(command) {
 /**
  * Check if DNS entry already exists
  */
-function checkDNSEntry() {
+export function checkDNSEntry() {
   try {
     const hostsContent = fs.readFileSync(HOSTS_FILE, "utf8");
     return hostsContent.includes(TARGET_HOST);
@@ -56,7 +56,7 @@ function checkDNSEntry() {
 /**
  * Add DNS entry to hosts file
  */
-async function addDNSEntry(sudoPassword) {
+export async function addDNSEntry(sudoPassword) {
   if (checkDNSEntry()) {
     console.log(`DNS entry for ${TARGET_HOST} already exists`);
     return;
@@ -81,7 +81,7 @@ async function addDNSEntry(sudoPassword) {
 /**
  * Remove DNS entry from hosts file
  */
-async function removeDNSEntry(sudoPassword) {
+export async function removeDNSEntry(sudoPassword) {
   if (!checkDNSEntry()) {
     console.log(`DNS entry for ${TARGET_HOST} does not exist`);
     return;
@@ -107,5 +107,3 @@ async function removeDNSEntry(sudoPassword) {
     throw new Error(`Failed to remove DNS entry: ${error.message}`);
   }
 }
-
-module.exports = { addDNSEntry, removeDNSEntry, execWithPassword, checkDNSEntry };

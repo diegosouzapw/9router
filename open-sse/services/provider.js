@@ -1,4 +1,5 @@
 import { PROVIDERS } from "../config/constants.js";
+import { getRegistryEntry } from "../config/providerRegistry.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
 const OPENAI_COMPATIBLE_DEFAULTS = {
@@ -157,50 +158,36 @@ export function buildProviderUrl(provider, model, stream = true, options = {}) {
     const baseUrl = options?.baseUrl || ANTHROPIC_COMPATIBLE_DEFAULTS.baseUrl;
     return buildAnthropicCompatibleUrl(baseUrl);
   }
+
+  const entry = getRegistryEntry(provider);
   const config = getProviderConfig(provider);
 
-  switch (provider) {
-    case "claude":
-      return `${config.baseUrl}?beta=true`;
-
-    case "gemini": {
-      const action = stream ? "streamGenerateContent?alt=sse" : "generateContent";
-      return `${config.baseUrl}/${model}:${action}`;
-    }
-
-    case "gemini-cli": {
-      const action = stream ? "streamGenerateContent?alt=sse" : "generateContent";
-      return `${config.baseUrl}:${action}`;
-    }
-
-    case "antigravity": {
-      // Use baseUrlIndex from options or default to 0
+  // Registry-driven URL building
+  if (entry) {
+    // Multi-URL providers (e.g. antigravity)
+    if (entry.baseUrls) {
       const urlIndex = options?.baseUrlIndex || 0;
-      const baseUrl = config.baseUrls[urlIndex] || config.baseUrls[0];
-      const path = stream ? "/v1internal:streamGenerateContent?alt=sse" : "/v1internal:generateContent";
-      return `${baseUrl}${path}`;
+      const baseUrl = entry.baseUrls[urlIndex] || entry.baseUrls[0];
+      if (entry.urlBuilder) return entry.urlBuilder(baseUrl, model, stream);
+      return baseUrl;
     }
-
-    case "codex":
-      return config.baseUrl;
-
-    case "github":
-      return config.baseUrl;
-
-    case "glm":
-    case "kimi-coding":
-    case "minimax":
-      // Claude-compatible providers
-      return `${config.baseUrl}?beta=true`;
-
-    default:
-      return config.baseUrl;
+    // Custom URL builder (e.g. gemini, gemini-cli)
+    if (entry.urlBuilder) {
+      return entry.urlBuilder(entry.baseUrl, model, stream);
+    }
+    // URL suffix (e.g. claude: ?beta=true)
+    if (entry.urlSuffix) {
+      return `${entry.baseUrl}${entry.urlSuffix}`;
+    }
   }
+
+  return config.baseUrl;
 }
 
 // Build provider headers
 export function buildProviderHeaders(provider, credentials, stream = true, body = null) {
   const config = getProviderConfig(provider);
+  const entry = getRegistryEntry(provider);
   const headers = {
     "Content-Type": "application/json",
     ...config.headers
@@ -211,87 +198,47 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
   if (isAnthropicCompatible(provider)) {
     if (credentials.apiKey) {
       headers["x-api-key"] = credentials.apiKey;
-      // Do NOT send Authorization header when apiKey is present for Anthropic Compatible
-      // as it causes issues with some providers (e.g. opencode.ai)
     } else if (credentials.accessToken) {
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
     }
-    // Add default Anthropic version if not present (some proxies require it)
     if (!headers["anthropic-version"]) {
       headers["anthropic-version"] = "2023-06-01";
     }
-  } else {
-    switch (provider) {
-      case "gemini":
-        if (credentials.apiKey) {
-          headers["x-goog-api-key"] = credentials.apiKey;
-        } else if (credentials.accessToken) {
-          headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-        }
-        break;
-  
-      case "antigravity":
-      case "gemini-cli":
-        // Antigravity and Gemini CLI use OAuth access token
-        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-        break;
-  
-      case "claude":
-        // Claude uses x-api-key header for API key, or Authorization for OAuth
-        if (credentials.apiKey) {
-          headers["x-api-key"] = credentials.apiKey;
-        } else if (credentials.accessToken) {
-          headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-        }
-        break;
-  
-      case "github":
-        // GitHub Copilot requires special headers to mimic VSCode
-        // Prioritize copilotToken from providerSpecificData, fallback to accessToken
-        const githubToken = credentials.copilotToken || credentials.accessToken;
-        // Add headers in exact same order as test endpoint
-        headers["Authorization"] = `Bearer ${githubToken}`;
-        // Note: Content-Type already set in default headers above
-        headers["copilot-integration-id"] = "vscode-chat";
-        headers["editor-version"] = "vscode/1.107.1";
-        headers["editor-plugin-version"] = "copilot-chat/0.26.7";
-        headers["user-agent"] = "GitHubCopilotChat/0.26.7";
-        headers["openai-intent"] = "conversation-panel";
-        headers["x-github-api-version"] = "2025-04-01";
-        // Generate a UUID for x-request-id (Cloudflare Workers compatible)
-        headers["x-request-id"] = crypto.randomUUID ? crypto.randomUUID() : 
-          'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-            const r = Math.random() * 16 | 0;
-            const v = c == 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-          });
-        headers["x-vscode-user-agent-library-version"] = "electron-fetch";
-        headers["X-Initiator"] = "user";
-        // Accept is set to text/event-stream for streaming at line 295,
-        // only set application/json for non-streaming requests
-        if (!stream) {
-          headers["Accept"] = "application/json";
-        }
-        break;
-  
-      case "codex":
-      case "qwen":
-      case "openai":
-      case "openrouter":
-        headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
-        break;
-  
-      case "glm":
-      case "kimi-coding":
-      case "minimax":
-        // Claude-compatible API providers use x-api-key
-        headers["x-api-key"] = credentials.apiKey;
-        break;
-  
-      default:
-        headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
-        break;
+  } else if (provider === "github") {
+    // GitHub Copilot requires special dynamic headers (x-request-id)
+    const githubToken = credentials.copilotToken || credentials.accessToken;
+    headers["Authorization"] = `Bearer ${githubToken}`;
+    headers["x-request-id"] = crypto.randomUUID ? crypto.randomUUID() : 
+      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    if (!stream) {
+      headers["Accept"] = "application/json";
     }
+  } else if (entry) {
+    // Registry-driven auth
+    const authHeader = entry.authHeader || "bearer";
+    if (authHeader === "x-api-key") {
+      if (credentials.apiKey) {
+        headers["x-api-key"] = credentials.apiKey;
+      } else if (credentials.accessToken) {
+        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+      }
+    } else if (authHeader === "x-goog-api-key") {
+      if (credentials.apiKey) {
+        headers["x-goog-api-key"] = credentials.apiKey;
+      } else if (credentials.accessToken) {
+        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+      }
+    } else {
+      // bearer (default)
+      headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+    }
+  } else {
+    // Fallback for unknown providers
+    headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
   }
 
   // Stream accept header
@@ -310,6 +257,9 @@ export function getTargetFormat(provider) {
   if (isAnthropicCompatible(provider)) {
     return "claude";
   }
+  // Registry-driven format lookup
+  const entry = getRegistryEntry(provider);
+  if (entry) return entry.format || "openai";
   const config = getProviderConfig(provider);
   return config.format || "openai";
 }

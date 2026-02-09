@@ -1,30 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Card, Button, Select } from "@/shared/components";
+import { AI_PROVIDERS, OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 import dynamic from "next/dynamic";
 
 // Dynamically import Monaco Editor (client-side only)
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
-
-const PROVIDERS = [
-  { value: "antigravity", label: "Antigravity" },
-  { value: "gemini-cli", label: "Gemini CLI" },
-  { value: "claude", label: "Claude" },
-  { value: "codex", label: "Codex" },
-  { value: "github", label: "GitHub" },
-  { value: "qwen", label: "Qwen" },
-  { value: "iflow", label: "iFlow AI" },
-  { value: "kiro", label: "Kiro AI" },
-  { value: "openai", label: "OpenAI" },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "gemini", label: "Gemini" },
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "glm", label: "GLM" },
-  { value: "kimi", label: "Kimi" },
-  { value: "kimi-coding", label: "Kimi Coding" },
-  { value: "minimax", label: "MiniMax" },
-];
 
 const STEPS = [
   { id: 1, name: "Client Request", file: "1_req_client.json" },
@@ -36,6 +18,7 @@ const STEPS = [
 
 export default function TranslatorPage() {
   const [provider, setProvider] = useState("antigravity");
+  const [providerOptions, setProviderOptions] = useState([]);
   const [steps, setSteps] = useState({
     1: "",
     2: "",
@@ -51,6 +34,79 @@ export default function TranslatorPage() {
     5: false,
   });
   const [loading, setLoading] = useState({});
+
+  useEffect(() => {
+    const fetchProviderOptions = async () => {
+      try {
+        const [connectionsRes, nodesRes] = await Promise.all([
+          fetch("/api/providers"),
+          fetch("/api/provider-nodes"),
+        ]);
+
+        const [connectionsData, nodesData] = await Promise.all([
+          connectionsRes.json(),
+          nodesRes.json(),
+        ]);
+
+        const nodeMap = new Map((nodesData.nodes || []).map((node) => [node.id, node]));
+        const activeProviders = new Set(
+          (connectionsData.connections || [])
+            .filter((conn) => conn.isActive !== false)
+            .map((conn) => conn.provider)
+        );
+
+        const optionsFromConnections = [...activeProviders].map((providerId) => {
+          const staticInfo = AI_PROVIDERS[providerId];
+          const node = nodeMap.get(providerId);
+
+          let label = staticInfo?.name || providerId;
+          if (!staticInfo && node?.name) {
+            label = node.name;
+          } else if (!staticInfo && providerId.startsWith(OPENAI_COMPATIBLE_PREFIX)) {
+            label = node?.name || "OpenAI Compatible";
+          } else if (!staticInfo && providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX)) {
+            label = node?.name || "Anthropic Compatible";
+          }
+
+          return {
+            value: providerId,
+            label,
+          };
+        });
+
+        const fallbackOptions = Object.entries(AI_PROVIDERS).map(([providerId, info]) => ({
+          value: providerId,
+          label: info.name,
+        }));
+
+        const nextOptions = (optionsFromConnections.length > 0 ? optionsFromConnections : fallbackOptions)
+          .sort((a, b) => a.label.localeCompare(b.label));
+
+        setProviderOptions(nextOptions);
+        if (nextOptions.length > 0) {
+          setProvider((current) =>
+            nextOptions.some((opt) => opt.value === current) ? current : nextOptions[0].value
+          );
+        }
+      } catch (error) {
+        console.error("Error loading provider options:", error);
+        const fallbackOptions = Object.entries(AI_PROVIDERS)
+          .map(([providerId, info]) => ({
+            value: providerId,
+            label: info.name,
+          }))
+          .sort((a, b) => a.label.localeCompare(b.label));
+        setProviderOptions(fallbackOptions);
+        if (fallbackOptions.length > 0) {
+          setProvider((current) =>
+            fallbackOptions.some((opt) => opt.value === current) ? current : fallbackOptions[0].value
+          );
+        }
+      }
+    };
+
+    fetchProviderOptions();
+  }, []);
 
   const toggleExpand = (stepId) => {
     setExpanded({ ...expanded, [stepId]: !expanded[stepId] });
@@ -310,7 +366,7 @@ export default function TranslatorPage() {
             <Select
               value={provider}
               onChange={(e) => setProvider(e.target.value)}
-              options={PROVIDERS}
+              options={providerOptions}
             />
           </div>
           
