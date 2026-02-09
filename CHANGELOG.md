@@ -1,3 +1,22 @@
+# v0.2.73 (2026-02-09)
+
+## Features
+
+- Expanded provider registry from 18 → 28 providers:
+  - **Phase 1:** DeepSeek, Groq, xAI (Grok), Mistral, Perplexity — high-priority API Key providers.
+  - **Phase 4:** Together AI, Fireworks AI, Cerebras, Cohere, NVIDIA NIM — medium-priority API Key providers.
+  - All use `DefaultExecutor` with OpenAI-compatible format.
+- Added `/v1/embeddings` endpoint with 6 providers and 9 embedding models:
+  - Nebius, OpenAI, Mistral, Together AI, Fireworks AI, NVIDIA NIM.
+  - New handler (`open-sse/handlers/embeddings.js`), registry (`open-sse/config/embeddingRegistry.js`), and Next.js route.
+- Added `/v1/images/generations` endpoint with 4 providers and 9 image models:
+  - OpenAI (DALL-E), xAI (Grok Image), Together AI (FLUX), Fireworks AI.
+  - New handler (`open-sse/handlers/imageGeneration.js`), registry (`open-sse/config/imageRegistry.js`), and Next.js route.
+- Added `<think>` tag parser (`open-sse/utils/thinkTagParser.js`) for reasoning models (DeepSeek, Qwen).
+  - Supports both full-text extraction and streaming delta processing.
+- Enhanced `/v1/models` endpoint to list chat, embedding, and image models with type metadata.
+- Updated `open-sse/index.js` with exports for new handlers, registries, and utilities.
+
 # v0.2.72 (2026-02-08)
 
 ## Features

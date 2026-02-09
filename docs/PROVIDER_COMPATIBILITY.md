@@ -56,3 +56,43 @@ Unsupported features return HTTP 400:
 
 - When Codex is the target provider, requests are forwarded natively without translation
 - All Responses API features supported by Codex work directly
+
+### API Key Providers (DeepSeek, Groq, xAI, Mistral, Perplexity, Together, Fireworks, Cerebras, Cohere, NVIDIA)
+
+- All use OpenAI-compatible format and DefaultExecutor
+- Translations follow the standard OpenAI hub format path
+- No provider-specific Responses API support; only Chat Completions format
+
+## Additional Endpoints
+
+### Embeddings (`/v1/embeddings`)
+
+OpenAI-compatible embedding generation endpoint. Supported providers:
+
+| Provider     | Auth    | Models                                           |
+| ------------ | ------- | ------------------------------------------------ |
+| Nebius       | API Key | BAAI/bge-en-icl, Qwen/Qwen3-Embedding-8B         |
+| OpenAI       | API Key | text-embedding-3-small, text-embedding-3-large   |
+| Mistral      | API Key | mistral-embed                                    |
+| Together AI  | API Key | BAAI/bge-large-en-v1.5, togethercomputer/m2-bert |
+| Fireworks AI | API Key | nomic-ai/nomic-embed-text-v1.5                   |
+| NVIDIA NIM   | API Key | nvidia/nv-embedqa-e5-v5                          |
+
+### Image Generation (`/v1/images/generations`)
+
+OpenAI-compatible image generation endpoint. Supported providers:
+
+| Provider     | Auth    | Models                                          |
+| ------------ | ------- | ----------------------------------------------- |
+| OpenAI       | API Key | dall-e-3, dall-e-2                              |
+| xAI (Grok)   | API Key | grok-2-image                                    |
+| Together AI  | API Key | FLUX.1-schnell, FLUX.1-dev, FLUX.1.1-pro        |
+| Fireworks AI | API Key | FLUX-1-schnell, FLUX-1-dev, stable-diffusion-xl |
+
+### Enhanced Models Endpoint (`/v1/models`)
+
+Now returns chat, embedding, and image models in a unified list. Each model includes:
+
+- `type` field: `"chat"`, `"embedding"`, or `"image"`
+- Embedding models include `dimensions` metadata
+- Image models include `sizes` metadata

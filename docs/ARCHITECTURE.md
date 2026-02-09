@@ -1,6 +1,6 @@
 # 9Router Architecture
 
-_Last updated: 2026-02-08_
+_Last updated: 2026-02-09_
 
 ## Executive Summary
 
@@ -9,11 +9,14 @@ It provides a single OpenAI-compatible endpoint (`/v1/*`) and routes traffic acr
 
 Core capabilities:
 
-- OpenAI-compatible API surface for CLI/tools
+- OpenAI-compatible API surface for CLI/tools (28 providers)
 - Request/response translation across provider formats
 - Model combo fallback (multi-model sequence)
 - Account-level fallback (multi-account per provider)
 - OAuth + API-key provider connection management
+- Embedding generation via `/v1/embeddings` (6 providers, 9 models)
+- Image generation via `/v1/images/generations` (4 providers, 9 models)
+- Think tag parsing (`<think>...</think>`) for reasoning models
 - Local persistence for providers, keys, aliases, combos, settings, pricing
 - Usage/cost tracking and request logging
 - Optional cloud sync for multi-device/state sync
@@ -62,7 +65,7 @@ flowchart LR
 
     subgraph Upstreams[Upstream Providers]
         P1[OAuth Providers\nClaude/Codex/Gemini/Qwen/iFlow/GitHub/Kiro/Cursor/Antigravity]
-        P2[API Key Providers\nOpenAI/Anthropic/OpenRouter/GLM/Kimi/MiniMax]
+        P2[API Key Providers\nOpenAI/Anthropic/OpenRouter/GLM/Kimi/MiniMax\nDeepSeek/Groq/xAI/Mistral/Perplexity\nTogether/Fireworks/Cerebras/Cohere/NVIDIA]
         P3[Compatible Nodes\nOpenAI-compatible / Anthropic-compatible]
     end
 
@@ -104,6 +107,8 @@ Important compatibility routes:
 - `src/app/api/v1/messages/route.js`
 - `src/app/api/v1/responses/route.js`
 - `src/app/api/v1/models/route.js`
+- `src/app/api/v1/embeddings/route.js` — embedding generation (6 providers)
+- `src/app/api/v1/images/generations/route.js` — image generation (4 providers)
 - `src/app/api/v1/messages/count_tokens/route.js`
 - `src/app/api/v1beta/models/route.js`
 - `src/app/api/v1beta/models/[...path]/route.js`
@@ -132,6 +137,11 @@ Main flow modules:
 - Translation registry: `open-sse/translator/index.js`
 - Stream transformations: `open-sse/utils/stream.js`, `open-sse/utils/streamHandler.js`
 - Usage extraction/normalization: `open-sse/utils/usageTracking.js`
+- Think tag parser: `open-sse/utils/thinkTagParser.js`
+- Embedding handler: `open-sse/handlers/embeddings.js`
+- Embedding provider registry: `open-sse/config/embeddingRegistry.js`
+- Image generation handler: `open-sse/handlers/imageGeneration.js`
+- Image provider registry: `open-sse/config/imageRegistry.js`
 
 ## 3) Persistence Layer
 
@@ -450,15 +460,15 @@ flowchart LR
 
 Each provider has a specialized executor extending `BaseExecutor` (in `open-sse/executors/base.js`), which provides URL building, header construction, retry with exponential backoff, credential refresh hooks, and the `execute()` orchestration method.
 
-| Executor              | Provider(s)                                                         | Special Handling                                                     |
-| --------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `DefaultExecutor`     | OpenAI, Claude, Gemini, Qwen, iFlow, OpenRouter, GLM, Kimi, MiniMax | Dynamic URL/header config per provider                               |
-| `AntigravityExecutor` | Google Antigravity                                                  | Custom project/session IDs, Retry-After parsing                      |
-| `CodexExecutor`       | OpenAI Codex                                                        | Injects system instructions, forces reasoning effort                 |
-| `CursorExecutor`      | Cursor IDE                                                          | ConnectRPC protocol, Protobuf encoding, request signing via checksum |
-| `GithubExecutor`      | GitHub Copilot                                                      | Copilot token refresh, VSCode-mimicking headers                      |
-| `KiroExecutor`        | AWS CodeWhisperer/Kiro                                              | AWS EventStream binary format → SSE conversion                       |
-| `GeminiCLIExecutor`   | Gemini CLI                                                          | Google OAuth token refresh cycle                                     |
+| Executor              | Provider(s)                                                                                                                                                  | Special Handling                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `DefaultExecutor`     | OpenAI, Claude, Gemini, Qwen, iFlow, OpenRouter, GLM, Kimi, MiniMax, DeepSeek, Groq, xAI, Mistral, Perplexity, Together, Fireworks, Cerebras, Cohere, NVIDIA | Dynamic URL/header config per provider                               |
+| `AntigravityExecutor` | Google Antigravity                                                                                                                                           | Custom project/session IDs, Retry-After parsing                      |
+| `CodexExecutor`       | OpenAI Codex                                                                                                                                                 | Injects system instructions, forces reasoning effort                 |
+| `CursorExecutor`      | Cursor IDE                                                                                                                                                   | ConnectRPC protocol, Protobuf encoding, request signing via checksum |
+| `GithubExecutor`      | GitHub Copilot                                                                                                                                               | Copilot token refresh, VSCode-mimicking headers                      |
+| `KiroExecutor`        | AWS CodeWhisperer/Kiro                                                                                                                                       | AWS EventStream binary format → SSE conversion                       |
+| `GeminiCLIExecutor`   | Gemini CLI                                                                                                                                                   | Google OAuth token refresh cycle                                     |
 
 All other providers (including custom compatible nodes) use the `DefaultExecutor`.
 
@@ -479,6 +489,16 @@ All other providers (including custom compatible nodes) use the `DefaultExecutor
 | iFlow            | openai           | OAuth (Basic)         | ✅               | ✅         | ✅            | ⚠️ Per request     |
 | OpenRouter       | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
 | GLM/Kimi/MiniMax | claude           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| DeepSeek         | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| Groq             | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| xAI (Grok)       | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| Mistral          | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| Perplexity       | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| Together AI      | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| Fireworks AI     | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| Cerebras         | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| Cohere           | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| NVIDIA NIM       | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
 
 ## Format Translation Coverage
 
@@ -507,14 +527,18 @@ Translations are selected dynamically based on source payload shape and provider
 
 ## Supported API Endpoints
 
-| Endpoint                                      | Format             | Handler                                 |
-| --------------------------------------------- | ------------------ | --------------------------------------- |
-| `POST /v1/chat/completions`                   | OpenAI Chat        | `src/sse/handlers/chat.js`              |
-| `POST /v1/messages`                           | Claude Messages    | Same handler (auto-detected)            |
-| `POST /v1/responses`                          | OpenAI Responses   | `open-sse/handlers/responsesHandler.js` |
-| `POST /v1/messages/count_tokens`              | Claude Token Count | API route                               |
-| `GET /v1/models`                              | OpenAI Models list | API route                               |
-| `POST /v1beta/models/*:streamGenerateContent` | Gemini native      | API route                               |
+| Endpoint                                      | Format             | Handler                                     |
+| --------------------------------------------- | ------------------ | ------------------------------------------- |
+| `POST /v1/chat/completions`                   | OpenAI Chat        | `src/sse/handlers/chat.js`                  |
+| `POST /v1/messages`                           | Claude Messages    | Same handler (auto-detected)                |
+| `POST /v1/responses`                          | OpenAI Responses   | `open-sse/handlers/responsesHandler.js`     |
+| `POST /v1/embeddings`                         | OpenAI Embeddings  | `open-sse/handlers/embeddings.js`           |
+| `GET /v1/embeddings`                          | Model listing      | API route                                   |
+| `POST /v1/images/generations`                 | OpenAI Images      | `open-sse/handlers/imageGeneration.js`      |
+| `GET /v1/images/generations`                  | Model listing      | API route                                   |
+| `POST /v1/messages/count_tokens`              | Claude Token Count | API route                                   |
+| `GET /v1/models`                              | OpenAI Models list | API route (chat + embedding + image models) |
+| `POST /v1beta/models/*:streamGenerateContent` | Gemini native      | API route                                   |
 
 ## Bypass Handler
 
