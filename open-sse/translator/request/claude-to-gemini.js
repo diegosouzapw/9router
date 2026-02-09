@@ -168,7 +168,7 @@ export function claudeToGeminiRequest(model, body, stream) {
   return result;
 }
 
-// Register as direct path: Claude → Gemini (all Gemini variants)
+// Register direct path only for plain Gemini API.
+// Gemini CLI / Antigravity require Cloud Code envelope wrapping,
+// so they must use the existing hub path (Claude -> OpenAI -> target).
 register(FORMATS.CLAUDE, FORMATS.GEMINI, claudeToGeminiRequest, null);
-register(FORMATS.CLAUDE, FORMATS.GEMINI_CLI, claudeToGeminiRequest, null);
-register(FORMATS.CLAUDE, FORMATS.ANTIGRAVITY, claudeToGeminiRequest, null);

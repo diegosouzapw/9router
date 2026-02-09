@@ -56,11 +56,12 @@ export function validateBody(schema, body) {
   if (result.success) {
     return { success: true, data: result.data };
   }
+  const issues = Array.isArray(result.error?.issues) ? result.error.issues : [];
   return {
     success: false,
     error: {
       message: "Invalid request",
-      details: result.error.errors.map(e => ({
+      details: issues.map(e => ({
         field: e.path.join("."),
         message: e.message,
       })),

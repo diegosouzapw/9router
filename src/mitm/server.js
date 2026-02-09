@@ -1,14 +1,9 @@
-import https from "https";
-import fs from "fs";
-import path from "path";
-import dns from "dns";
-import { promisify } from "util";
-import os from "os";
-import { fileURLToPath } from "url";
-
-// ESM equivalent of __dirname
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const https = require("https");
+const fs = require("fs");
+const path = require("path");
+const dns = require("dns");
+const { promisify } = require("util");
+const os = require("os");
 
 // Configuration
 const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";

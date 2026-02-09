@@ -788,3 +788,112 @@ export async function getPricing() {
 
   return mergedPricing;
 }
+
+/**
+ * Get pricing for a specific provider and model
+ */
+export async function getPricingForModel(provider, model) {
+  const pricing = await getPricing();
+
+  // Try direct lookup
+  if (pricing[provider]?.[model]) {
+    return pricing[provider][model];
+  }
+
+  // Fallback: map provider ID to alias
+  const PROVIDER_ID_TO_ALIAS = {
+    claude: "cc",
+    codex: "cx",
+    "gemini-cli": "gc",
+    qwen: "qw",
+    iflow: "if",
+    antigravity: "ag",
+    github: "gh",
+    kiro: "kr",
+    cursor: "cu",
+    openai: "openai",
+    anthropic: "anthropic",
+    gemini: "gemini",
+    openrouter: "openrouter",
+    glm: "glm",
+    kimi: "kimi",
+    "kimi-coding": "kmc",
+    minimax: "minimax",
+    "minimax-cn": "minimax",
+  };
+
+  const alias = PROVIDER_ID_TO_ALIAS[provider];
+  if (alias && pricing[alias]) {
+    return pricing[alias][model] || null;
+  }
+
+  return null;
+}
+
+/**
+ * Update pricing configuration
+ * @param {object} pricingData - New pricing data to merge
+ */
+export async function updatePricing(pricingData) {
+  return withWriteLock(async () => {
+    const db = await getDb();
+
+    if (!db.data.pricing) {
+      db.data.pricing = {};
+    }
+
+    for (const [provider, models] of Object.entries(pricingData)) {
+      if (!db.data.pricing[provider]) {
+        db.data.pricing[provider] = {};
+      }
+
+      for (const [model, pricing] of Object.entries(models)) {
+        db.data.pricing[provider][model] = pricing;
+      }
+    }
+
+    await db.write();
+    return db.data.pricing;
+  });
+}
+
+/**
+ * Reset pricing to defaults for specific provider/model
+ * @param {string} provider - Provider ID
+ * @param {string} model - Model ID (optional, if not provided resets entire provider)
+ */
+export async function resetPricing(provider, model) {
+  return withWriteLock(async () => {
+    const db = await getDb();
+
+    if (!db.data.pricing) {
+      db.data.pricing = {};
+    }
+
+    if (model) {
+      if (db.data.pricing[provider]) {
+        delete db.data.pricing[provider][model];
+        if (Object.keys(db.data.pricing[provider]).length === 0) {
+          delete db.data.pricing[provider];
+        }
+      }
+    } else {
+      delete db.data.pricing[provider];
+    }
+
+    await db.write();
+    return db.data.pricing;
+  });
+}
+
+/**
+ * Reset all pricing to defaults
+ */
+export async function resetAllPricing() {
+  return withWriteLock(async () => {
+    const db = await getDb();
+    db.data.pricing = {};
+    await db.write();
+    return db.data.pricing;
+  });
+}

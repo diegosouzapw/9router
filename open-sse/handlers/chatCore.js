@@ -70,7 +70,41 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Translate request (pass reqLogger for intermediate logging)
   let translatedBody = body;
-  translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger);
+  try {
+    translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger);
+  } catch (error) {
+    const parsedStatus = Number(error?.statusCode);
+    const statusCode = Number.isInteger(parsedStatus) && parsedStatus >= 400 && parsedStatus <= 599
+      ? parsedStatus
+      : HTTP_STATUS.SERVER_ERROR;
+    const message = error?.message || "Invalid request";
+    const errorType = typeof error?.errorType === "string" ? error.errorType : null;
+
+    log?.warn?.("TRANSLATE", `Request translation failed: ${message}`);
+
+    if (errorType) {
+      return {
+        success: false,
+        status: statusCode,
+        error: message,
+        response: new Response(JSON.stringify({
+          error: {
+            message,
+            type: errorType,
+            code: errorType
+          }
+        }), {
+          status: statusCode,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        })
+      };
+    }
+
+    return createErrorResult(statusCode, message);
+  }
 
   // Extract toolNameMap for response translation (Claude OAuth)
   const toolNameMap = translatedBody._toolNameMap;
