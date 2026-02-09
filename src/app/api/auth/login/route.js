@@ -3,6 +3,7 @@ import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
 import { cookies } from "next/headers";
+import { loginSchema, validateBody } from "@/shared/validation/schemas";
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "9router-default-secret-change-me"
@@ -10,7 +11,14 @@ const SECRET = new TextEncoder().encode(
 
 export async function POST(request) {
   try {
-    const { password } = await request.json();
+    const rawBody = await request.json();
+
+    // Zod validation
+    const validation = validateBody(loginSchema, rawBody);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const { password } = validation.data;
     const settings = await getSettings();
 
     // Default password is '123456' if not set

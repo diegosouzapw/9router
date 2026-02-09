@@ -4,6 +4,7 @@ import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { createProviderSchema, validateBody } from "@/shared/validation/schemas";
 
 // GET /api/providers - List all connections
 export async function GET() {
@@ -30,21 +31,21 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = body;
 
-    // Validation
+    // Zod validation
+    const validation = validateBody(createProviderSchema, body);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = validation.data;
+
+    // Business validation
     const isValidProvider = APIKEY_PROVIDERS[provider] || 
                           isOpenAICompatibleProvider(provider) || 
                           isAnthropicCompatibleProvider(provider);
 
-    if (!provider || !isValidProvider) {
+    if (!isValidProvider) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
-    }
-    if (!apiKey) {
-      return NextResponse.json({ error: "API Key is required" }, { status: 400 });
-    }
-    if (!name) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
     let providerSpecificData = null;

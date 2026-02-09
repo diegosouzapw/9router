@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
-
-// Validate combo name: only a-z, A-Z, 0-9, -, _
-const VALID_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
+import { createComboSchema, validateBody } from "@/shared/validation/schemas";
 
 // GET /api/combos - Get all combos
 export async function GET() {
@@ -21,16 +19,13 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name, models } = body;
 
-    if (!name) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    // Zod validation (covers name format, length, etc.)
+    const validation = validateBody(createComboSchema, body);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-
-    // Validate name format
-    if (!VALID_NAME_REGEX.test(name)) {
-      return NextResponse.json({ error: "Name can only contain letters, numbers, - and _" }, { status: 400 });
-    }
+    const { name, models } = validation.data;
 
     // Check if name already exists
     const existing = await getComboByName(name);

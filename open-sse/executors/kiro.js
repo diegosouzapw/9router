@@ -3,6 +3,24 @@ import { PROVIDERS } from "../config/constants.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 
+// ── CRC32 lookup table (IEEE polynomial, no dependency) ──
+const CRC32_TABLE = new Uint32Array(256);
+for (let i = 0; i < 256; i++) {
+  let c = i;
+  for (let j = 0; j < 8; j++) {
+    c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+  }
+  CRC32_TABLE[i] = c >>> 0;
+}
+
+function crc32(buf) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) {
+    crc = CRC32_TABLE[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
  * Uses AWS CodeWhisperer streaming API with AWS EventStream binary format
@@ -382,8 +400,25 @@ export class KiroExecutor extends BaseExecutor {
 function parseEventFrame(data) {
   try {
     const view = new DataView(data.buffer, data.byteOffset);
+    const totalLength = view.getUint32(0, false);
     const headersLength = view.getUint32(4, false);
 
+    // ── CRC32 validation ──
+    // Prelude CRC covers bytes [0..7] (totalLength + headersLength)
+    const preludeCRC = view.getUint32(8, false);
+    const computedPreludeCRC = crc32(data.slice(0, 8));
+    if (preludeCRC !== computedPreludeCRC) {
+      console.warn(`[Kiro] Prelude CRC mismatch: expected ${preludeCRC}, got ${computedPreludeCRC} — skipping corrupted frame`);
+      return null;
+    }
+
+    // Message CRC covers bytes [0..totalLength-5] (everything except the CRC itself)
+    const messageCRC = view.getUint32(data.length - 4, false);
+    const computedMessageCRC = crc32(data.slice(0, data.length - 4));
+    if (messageCRC !== computedMessageCRC) {
+      console.warn(`[Kiro] Message CRC mismatch: expected ${messageCRC}, got ${computedMessageCRC} — skipping corrupted frame`);
+      return null;
+    }
     // Parse headers
     const headers = {};
     let offset = 12; // After prelude
@@ -436,7 +471,8 @@ function parseEventFrame(data) {
     }
 
     return { headers, payload };
-  } catch {
+  } catch (err) {
+    console.warn(`[Kiro] Frame parse error: ${err.message}`);
     return null;
   }
 }
