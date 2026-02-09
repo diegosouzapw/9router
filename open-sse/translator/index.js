@@ -28,10 +28,12 @@ import "./request/antigravity-to-openai.js";
 import "./request/openai-responses.js";
 import "./request/openai-to-kiro.js";
 import "./request/openai-to-cursor.js";
+import "./request/claude-to-gemini.js";
 
 import "./response/claude-to-openai.js";
 import "./response/openai-to-claude.js";
 import "./response/gemini-to-openai.js";
+import "./response/gemini-to-claude.js";
 import "./response/openai-to-antigravity.js";
 import "./response/openai-responses.js";
 import "./response/kiro-to-openai.js";
@@ -53,21 +55,29 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
   // If same format, skip translation steps
   if (sourceFormat !== targetFormat) {
-    // Step 1: source -> openai (if source is not openai)
-    if (sourceFormat !== FORMATS.OPENAI) {
-      const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
-      if (toOpenAI) {
-        result = toOpenAI(model, result, stream, credentials);
-        // Log OpenAI intermediate format
-        reqLogger?.logOpenAIRequest?.(result);
+    // Check for direct translation path first (e.g., Claude → Gemini)
+    const directKey = `${sourceFormat}:${targetFormat}`;
+    const directTranslator = requestRegistry.get(directKey);
+    if (directTranslator && sourceFormat !== FORMATS.OPENAI && targetFormat !== FORMATS.OPENAI) {
+      result = directTranslator(model, result, stream, credentials);
+    } else {
+      // Fallback: hub-and-spoke via OpenAI
+      // Step 1: source -> openai (if source is not openai)
+      if (sourceFormat !== FORMATS.OPENAI) {
+        const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
+        if (toOpenAI) {
+          result = toOpenAI(model, result, stream, credentials);
+          // Log OpenAI intermediate format
+          reqLogger?.logOpenAIRequest?.(result);
+        }
       }
-    }
 
-    // Step 2: openai -> target (if target is not openai)
-    if (targetFormat !== FORMATS.OPENAI) {
-      const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
-      if (fromOpenAI) {
-        result = fromOpenAI(model, result, stream, credentials);
+      // Step 2: openai -> target (if target is not openai)
+      if (targetFormat !== FORMATS.OPENAI) {
+        const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
+        if (fromOpenAI) {
+          result = fromOpenAI(model, result, stream, credentials);
+        }
       }
     }
   }
@@ -96,6 +106,20 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   let results = [chunk];
   let openaiResults = null; // Store OpenAI intermediate results
 
+  // Check for direct translation path first (e.g., Gemini → Claude)
+  const directKey = `${targetFormat}:${sourceFormat}`;
+  const directTranslator = responseRegistry.get(directKey);
+  if (directTranslator && targetFormat !== FORMATS.OPENAI && sourceFormat !== FORMATS.OPENAI) {
+    const converted = directTranslator(chunk, state);
+    if (converted) {
+      results = Array.isArray(converted) ? converted : [converted];
+    } else {
+      results = [];
+    }
+    return results;
+  }
+
+  // Fallback: hub-and-spoke via OpenAI
   // Step 1: target -> openai (if target is not openai)
   if (targetFormat !== FORMATS.OPENAI) {
     const toOpenAI = responseRegistry.get(`${targetFormat}:${FORMATS.OPENAI}`);
