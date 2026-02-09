@@ -1,10 +1,10 @@
-const { spawn } = require("child_process");
-const path = require("path");
-const fs = require("fs");
-const os = require("os");
-const { addDNSEntry, removeDNSEntry } = require("./dns/dnsConfig");
-const { generateCert } = require("./cert/generate");
-const { installCert } = require("./cert/install");
+import { spawn } from "child_process";
+import path from "path";
+import fs from "fs";
+import os from "os";
+import { addDNSEntry, removeDNSEntry } from "./dns/dnsConfig.js";
+import { generateCert } from "./cert/generate.js";
+import { installCert } from "./cert/install.js";
 
 // Store server process
 let serverProcess = null;
@@ -13,9 +13,9 @@ let serverPid = null;
 // Module-scoped password cache (not exposed on globalThis).
 // Cleared automatically when the MITM proxy is stopped.
 let _cachedPassword = null;
-function getCachedPassword() { return _cachedPassword; }
-function setCachedPassword(pwd) { _cachedPassword = pwd || null; }
-function clearCachedPassword() { _cachedPassword = null; }
+export function getCachedPassword() { return _cachedPassword; }
+export function setCachedPassword(pwd) { _cachedPassword = pwd || null; }
+export function clearCachedPassword() { _cachedPassword = null; }
 
 // server.js is in same directory as this file
 const PID_FILE = path.join(os.homedir(), ".9router", "mitm", ".mitm.pid");
@@ -33,7 +33,7 @@ function isProcessAlive(pid) {
 /**
  * Get MITM status
  */
-async function getMitmStatus() {
+export async function getMitmStatus() {
   // Check in-memory process first, then fallback to PID file
   let running = serverProcess !== null && !serverProcess.killed;
   let pid = serverPid;
@@ -76,7 +76,7 @@ async function getMitmStatus() {
  * @param {string} apiKey - 9Router API key
  * @param {string} sudoPassword - Sudo password for DNS/cert operations
  */
-async function startMitm(apiKey, sudoPassword) {
+export async function startMitm(apiKey, sudoPassword) {
   // Check if already running
   if (serverProcess && !serverProcess.killed) {
     throw new Error("MITM proxy is already running");
@@ -172,7 +172,7 @@ async function startMitm(apiKey, sudoPassword) {
  * Stop MITM proxy
  * @param {string} sudoPassword - Sudo password for DNS cleanup
  */
-async function stopMitm(sudoPassword) {
+export async function stopMitm(sudoPassword) {
   // 1. Kill server process (in-memory or from PID file)
   const proc = serverProcess;
   if (proc && !proc.killed) {
@@ -222,12 +222,3 @@ async function stopMitm(sudoPassword) {
     pid: null
   };
 }
-
-module.exports = {
-  getMitmStatus,
-  startMitm,
-  stopMitm,
-  getCachedPassword,
-  setCachedPassword,
-  clearCachedPassword
-};
