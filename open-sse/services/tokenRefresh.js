@@ -3,6 +3,10 @@ import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
 // Token expiry buffer (refresh if expires within 5 minutes)
 export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
+// In-flight refresh promise cache to prevent race conditions
+// Key: "provider:refreshToken" → Value: Promise<result>
+const refreshPromiseCache = new Map();
+
 /**
  * Refresh OAuth access token using refresh token
  */
@@ -68,41 +72,46 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
  * Specialized refresh for Claude OAuth tokens
  */
 export async function refreshClaudeOAuthToken(refreshToken, log) {
-  const response = await fetch(OAUTH_ENDPOINTS.anthropic.token, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: PROVIDERS.claude.clientId,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    log?.error?.("TOKEN_REFRESH", "Failed to refresh Claude OAuth token", {
-      status: response.status,
-      error: errorText,
+  try {
+    const response = await fetch(OAUTH_ENDPOINTS.anthropic.token, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: PROVIDERS.claude.clientId,
+      }),
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Claude OAuth token", {
+        status: response.status,
+        error: errorText,
+      });
+      return null;
+    }
+
+    const tokens = await response.json();
+    
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Claude OAuth token", {
+      hasNewAccessToken: !!tokens.access_token,
+      hasNewRefreshToken: !!tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+    });
+
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || refreshToken,
+      expiresIn: tokens.expires_in,
+    };
+  } catch (error) {
+    log?.error?.("TOKEN_REFRESH", `Network error refreshing Claude token: ${error.message}`);
     return null;
   }
-
-  const tokens = await response.json();
-  
-  log?.info?.("TOKEN_REFRESH", "Successfully refreshed Claude OAuth token", {
-    hasNewAccessToken: !!tokens.access_token,
-    hasNewRefreshToken: !!tokens.refresh_token,
-    expiresIn: tokens.expires_in,
-  });
-
-  return {
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token || refreshToken,
-    expiresIn: tokens.expires_in,
-  };
 }
 
 /**
@@ -245,36 +254,72 @@ export async function refreshCodexToken(refreshToken, log) {
  * Supports both AWS SSO OIDC (Builder ID/IDC) and Social Auth (Google/GitHub)
  */
 export async function refreshKiroToken(refreshToken, providerSpecificData, log) {
-  const authMethod = providerSpecificData?.authMethod;
-  const clientId = providerSpecificData?.clientId;
-  const clientSecret = providerSpecificData?.clientSecret;
-  const region = providerSpecificData?.region;
-  
-  // AWS SSO OIDC (Builder ID or IDC)
-  // If clientId and clientSecret exist, assume AWS SSO OIDC (default to builder-id if authMethod not specified)
-  if (clientId && clientSecret) {
-    const isIDC = authMethod === "idc";
-    const endpoint = isIDC && region
-      ? `https://oidc.${region}.amazonaws.com/token`
-      : "https://oidc.us-east-1.amazonaws.com/token";
+  try {
+    const authMethod = providerSpecificData?.authMethod;
+    const clientId = providerSpecificData?.clientId;
+    const clientSecret = providerSpecificData?.clientSecret;
+    const region = providerSpecificData?.region;
+    
+    // AWS SSO OIDC (Builder ID or IDC)
+    // If clientId and clientSecret exist, assume AWS SSO OIDC (default to builder-id if authMethod not specified)
+    if (clientId && clientSecret) {
+      const isIDC = authMethod === "idc";
+      const endpoint = isIDC && region
+        ? `https://oidc.${region}.amazonaws.com/token`
+        : "https://oidc.us-east-1.amazonaws.com/token";
+        
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          clientId: clientId,
+          clientSecret: clientSecret,
+          refreshToken: refreshToken,
+          grantType: "refresh_token",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro AWS token", {
+          status: response.status,
+          error: errorText,
+        });
+        return null;
+      }
+
+      const tokens = await response.json();
       
-    const response = await fetch(endpoint, {
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro AWS token", {
+        hasNewAccessToken: !!tokens.accessToken,
+        expiresIn: tokens.expiresIn,
+      });
+
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken || refreshToken,
+        expiresIn: tokens.expiresIn,
+      };
+    }
+    
+    // Social Auth (Google/GitHub) - use Kiro's refresh endpoint
+    const response = await fetch(PROVIDERS.kiro.tokenUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
       body: JSON.stringify({
-        clientId: clientId,
-        clientSecret: clientSecret,
         refreshToken: refreshToken,
-        grantType: "refresh_token",
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro AWS token", {
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro social token", {
         status: response.status,
         error: errorText,
       });
@@ -283,7 +328,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log) 
 
     const tokens = await response.json();
     
-    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro AWS token", {
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro social token", {
       hasNewAccessToken: !!tokens.accessToken,
       expiresIn: tokens.expiresIn,
     });
@@ -293,41 +338,10 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log) 
       refreshToken: tokens.refreshToken || refreshToken,
       expiresIn: tokens.expiresIn,
     };
-  }
-  
-  // Social Auth (Google/GitHub) - use Kiro's refresh endpoint
-  const response = await fetch(PROVIDERS.kiro.tokenUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      refreshToken: refreshToken,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro social token", {
-      status: response.status,
-      error: errorText,
-    });
+  } catch (error) {
+    log?.error?.("TOKEN_REFRESH", `Network error refreshing Kiro token: ${error.message}`);
     return null;
   }
-
-  const tokens = await response.json();
-  
-  log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro social token", {
-    hasNewAccessToken: !!tokens.accessToken,
-    expiresIn: tokens.expiresIn,
-  });
-
-  return {
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken || refreshToken,
-    expiresIn: tokens.expiresIn,
-  };
 }
 
 /**
@@ -461,14 +475,9 @@ export async function refreshCopilotToken(githubAccessToken, log) {
 }
 
 /**
- * Get access token for a specific provider
+ * Get access token for a specific provider (internal, does the actual work)
  */
-export async function getAccessToken(provider, credentials, log) {
-  if (!credentials || !credentials.refreshToken) {
-    log?.warn?.("TOKEN_REFRESH", `No refresh token available for provider: ${provider}`);
-    return null;
-  }
-
+async function _getAccessTokenInternal(provider, credentials, log) {
   switch (provider) {
     case "gemini":
     case "gemini-cli":
@@ -503,46 +512,50 @@ export async function getAccessToken(provider, credentials, log) {
       );
     
     default:
-      log?.warn?.("TOKEN_REFRESH", `Unsupported provider for token refresh: ${provider}`);
-      return null;
+      // Fallback to generic OAuth refresh for unknown providers
+      return refreshAccessToken(provider, credentials.refreshToken, credentials, log);
   }
 }
 
 /**
- * Refresh token by provider type (helper for handlers)
+ * Get access token for a specific provider (with deduplication).
+ * If a refresh is already in-flight for the same provider+token,
+ * subsequent calls share the existing promise instead of making
+ * parallel OAuth requests.
  */
-export async function refreshTokenByProvider(provider, credentials, log) {
-  if (!credentials.refreshToken) return null;
-
-  switch (provider) {
-    case "gemini-cli":
-    case "antigravity":
-      return refreshGoogleToken(
-        credentials.refreshToken,
-        PROVIDERS[provider].clientId,
-        PROVIDERS[provider].clientSecret,
-        log
-      );
-    case "claude":
-      return refreshClaudeOAuthToken(credentials.refreshToken, log);
-    case "codex":
-      return refreshCodexToken(credentials.refreshToken, log);
-    case "qwen":
-      return refreshQwenToken(credentials.refreshToken, log);
-    case "iflow":
-      return refreshIflowToken(credentials.refreshToken, log);
-    case "github":
-      return refreshGitHubToken(credentials.refreshToken, log);
-    case "kiro":
-      return refreshKiroToken(
-        credentials.refreshToken,
-        credentials.providerSpecificData,
-        log
-      );
-    default:
-      return refreshAccessToken(provider, credentials.refreshToken, credentials, log);
+export async function getAccessToken(provider, credentials, log) {
+  if (!credentials || !credentials.refreshToken) {
+    log?.warn?.("TOKEN_REFRESH", `No refresh token available for provider: ${provider}`);
+    return null;
   }
+
+  // Create a cache key from provider + truncated refresh token (for uniqueness)
+  const tokenKey = credentials.refreshToken.substring(0, 16);
+  const cacheKey = `${provider}:${tokenKey}`;
+
+  // If a refresh is already in-flight, reuse it
+  if (refreshPromiseCache.has(cacheKey)) {
+    log?.info?.("TOKEN_REFRESH", `Reusing in-flight refresh for ${provider}`);
+    return refreshPromiseCache.get(cacheKey);
+  }
+
+  // Start a new refresh and cache the promise
+  const refreshPromise = _getAccessTokenInternal(provider, credentials, log)
+    .finally(() => {
+      refreshPromiseCache.delete(cacheKey);
+    });
+
+  refreshPromiseCache.set(cacheKey, refreshPromise);
+  return refreshPromise;
 }
+
+/**
+ * Refresh token by provider type (alias for getAccessToken)
+ * @deprecated Since v0.2.70 — use getAccessToken() directly.
+ * Still exported because open-sse/index.js and src/sse wrapper use it.
+ * Will be removed in a future major version.
+ */
+export const refreshTokenByProvider = getAccessToken;
 
 /**
  * Format credentials for provider

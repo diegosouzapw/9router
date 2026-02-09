@@ -1,21 +1,14 @@
-// Provider alias to ID mapping
-const ALIAS_TO_PROVIDER_ID = {
-  cc: "claude",
-  cx: "codex",
-  gc: "gemini-cli",
-  qw: "qwen",
-  if: "iflow",
-  ag: "antigravity",
-  gh: "github",
-  kr: "kiro",
-  cu: "cursor",
-  // API Key providers (alias = id)
-  openai: "openai",
-  anthropic: "anthropic",
-  gemini: "gemini",
-  openrouter: "openrouter",
-  cursor: "cursor",
-};
+import { PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+
+// Derive alias→provider mapping from the single source of truth (PROVIDER_ID_TO_ALIAS)
+// This prevents the two maps from drifting out of sync
+const ALIAS_TO_PROVIDER_ID = {};
+for (const [id, alias] of Object.entries(PROVIDER_ID_TO_ALIAS)) {
+  if (ALIAS_TO_PROVIDER_ID[alias]) {
+    console.log(`[MODEL] Warning: alias "${alias}" maps to both "${ALIAS_TO_PROVIDER_ID[alias]}" and "${id}". Using "${id}".`);
+  }
+  ALIAS_TO_PROVIDER_ID[alias] = id;
+}
 
 /**
  * Resolve provider alias to provider ID
@@ -29,6 +22,12 @@ export function resolveProviderAlias(aliasOrId) {
  */
 export function parseModel(modelStr) {
   if (!modelStr) {
+    return { provider: null, model: null, isAlias: false, providerAlias: null };
+  }
+
+  // Sanitize: reject strings with path traversal or control characters
+  if (/\.\.[\/\\]/.test(modelStr) || /[\x00-\x1f]/.test(modelStr)) {
+    console.log(`[MODEL] Warning: rejected malformed model string: "${modelStr.substring(0, 50)}"`);
     return { provider: null, model: null, isAlias: false, providerAlias: null };
   }
 

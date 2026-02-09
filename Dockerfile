@@ -5,7 +5,7 @@ COPY package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
 
 COPY . ./
-RUN npm run build
+RUN mkdir -p /app/data && npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app

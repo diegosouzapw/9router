@@ -1,4 +1,6 @@
-// Provider configurations
+import { loadProviderCredentials } from "./credentialLoader.js";
+
+// Provider configurations (hardcoded values serve as defaults)
 export const PROVIDERS = {
   claude: {
     baseUrl: "https://api.anthropic.com/v1/messages",
@@ -171,6 +173,9 @@ export const PROVIDERS = {
     clientVersion: "1.1.3"
   }
 };
+
+// Merge external credentials from data/provider-credentials.json (if present)
+loadProviderCredentials(PROVIDERS);
 
 // Claude system prompt
 export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude.";

@@ -107,6 +107,13 @@ export function detectFormat(body) {
     if (body.system !== undefined || body.anthropic_version) {
       return "claude";
     }
+
+    // Additional Claude heuristic: max_tokens is a required Claude field
+    // and Claude requests rarely include OpenAI-specific fields like
+    // stream_options, response_format, or logprobs
+    if (body.max_tokens && !body.stream_options && !body.response_format) {
+      return "claude";
+    }
   }
 
   // Default to OpenAI format
@@ -244,7 +251,7 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         const githubToken = credentials.copilotToken || credentials.accessToken;
         // Add headers in exact same order as test endpoint
         headers["Authorization"] = `Bearer ${githubToken}`;
-        headers["Content-Type"] = "application/json";
+        // Note: Content-Type already set in default headers above
         headers["copilot-integration-id"] = "vscode-chat";
         headers["editor-version"] = "vscode/1.107.1";
         headers["editor-plugin-version"] = "copilot-chat/0.26.7";
@@ -260,7 +267,11 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
           });
         headers["x-vscode-user-agent-library-version"] = "electron-fetch";
         headers["X-Initiator"] = "user";
-        headers["Accept"] = "application/json";
+        // Accept is set to text/event-stream for streaming at line 295,
+        // only set application/json for non-streaming requests
+        if (!stream) {
+          headers["Accept"] = "application/json";
+        }
         break;
   
       case "codex":

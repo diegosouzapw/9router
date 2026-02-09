@@ -15,7 +15,11 @@ export const COLORS = {
   cyan: "\x1b[36m"
 };
 
-// Buffer tokens to prevent context errors
+/**
+ * Safety buffer added to reported token usage to prevent clients from hitting
+ * context window limits. 2000 tokens accounts for overhead from system prompts,
+ * tool definitions, and format translation that may not be reflected in raw usage.
+ */
 const BUFFER_TOKENS = 2000;
 
 // Get HH:MM:SS timestamp
@@ -209,20 +213,35 @@ export function extractUsage(chunk) {
   return null;
 }
 
+// Heuristic: approximate characters per token
+const CHARS_PER_TOKEN_TEXT = 4;     // ~4 chars/token for natural language
+const CHARS_PER_TOKEN_SCHEMA = 6;   // ~6 chars/token for JSON schemas (more verbose per token)
+
 /**
- * Estimate input tokens from request body
- * Calculate total body size for more accurate estimation
+ * Estimate input tokens from request body.
+ * Separates tool definitions (JSON schemas) from message content
+ * for more accurate estimation since JSON schemas are more verbose but
+ * compress into fewer tokens than plain text.
  */
 export function estimateInputTokens(body) {
   if (!body || typeof body !== "object") return 0;
 
   try {
-    // Calculate total body size (includes messages, tools, system, thinking config, etc.)
-    const bodyStr = JSON.stringify(body);
-    const totalChars = bodyStr.length;
+    let toolChars = 0;
+    let messageChars = 0;
 
-    // Estimate: ~4 chars per token (rough average across all tokenizers)
-    return Math.ceil(totalChars / 4);
+    // Separate tool definitions from the rest of the body
+    if (body.tools && Array.isArray(body.tools)) {
+      toolChars = JSON.stringify(body.tools).length;
+      // Estimate messages without tools
+      const { tools, ...bodyWithoutTools } = body;
+      messageChars = JSON.stringify(bodyWithoutTools).length;
+    } else {
+      messageChars = JSON.stringify(body).length;
+    }
+
+    return Math.ceil(messageChars / CHARS_PER_TOKEN_TEXT) +
+           Math.ceil(toolChars / CHARS_PER_TOKEN_SCHEMA);
   } catch (err) {
     // Fallback if stringify fails
     return 0;
