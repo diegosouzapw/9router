@@ -188,7 +188,7 @@ export function buildProviderUrl(provider, model, stream = true, options = {}) {
       return config.baseUrl;
 
     case "glm":
-    case "kimi":
+    case "kimi-coding":
     case "minimax":
       // Claude-compatible providers
       return `${config.baseUrl}?beta=true`;
@@ -282,7 +282,7 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         break;
   
       case "glm":
-      case "kimi":
+      case "kimi-coding":
       case "minimax":
         // Claude-compatible API providers use x-api-key
         headers["x-api-key"] = credentials.apiKey;
