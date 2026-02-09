@@ -2,15 +2,17 @@
 
 import { useState, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
+import Image from "next/image";
 import { Card, Button, Input, Modal, CardSkeleton } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 const CLOUD_ACTION_TIMEOUT_MS = 15000;
 
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
+  const [providerConnections, setProviderConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
@@ -56,6 +58,26 @@ export default function APIPageClient({ machineId }) {
     return { chat, embeddings, images };
   }, [allModels]);
 
+  const providerStats = useMemo(() => {
+    return Object.entries(AI_PROVIDERS).map(([providerId, providerInfo]) => {
+      const connections = providerConnections.filter((conn) => conn.provider === providerId);
+      const connected = connections.filter(
+        (conn) => conn.isActive !== false && (conn.testStatus === "active" || conn.testStatus === "success" || conn.testStatus === "unknown")
+      ).length;
+      const errors = connections.filter(
+        (conn) => conn.isActive !== false && (conn.testStatus === "error" || conn.testStatus === "expired" || conn.testStatus === "unavailable")
+      ).length;
+
+      return {
+        id: providerId,
+        provider: providerInfo,
+        total: connections.length,
+        connected,
+        errors,
+      };
+    });
+  }, [providerConnections]);
+
   const postCloudAction = async (action, timeoutMs = CLOUD_ACTION_TIMEOUT_MS) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -92,10 +114,22 @@ export default function APIPageClient({ machineId }) {
 
   const fetchData = async () => {
     try {
-      const keysRes = await fetch("/api/keys");
-      const keysData = await keysRes.json();
+      const [keysRes, providersRes] = await Promise.all([
+        fetch("/api/keys"),
+        fetch("/api/providers"),
+      ]);
+
+      const [keysData, providersData] = await Promise.all([
+        keysRes.json(),
+        providersRes.json(),
+      ]);
+
       if (keysRes.ok) {
         setKeys(keysData.keys || []);
+      }
+
+      if (providersRes.ok) {
+        setProviderConnections(providersData.connections || []);
       }
     } catch (error) {
       console.log("Error fetching data:", error);
@@ -269,6 +303,11 @@ export default function APIPageClient({ machineId }) {
             <p className="text-sm text-text-muted">
               {cloudEnabled ? "Using Cloud Proxy" : "Using Local Server"}
             </p>
+            {machineId && (
+              <p className="text-xs text-text-muted mt-1">
+                Machine ID: {machineId.slice(0, 8)}...
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {cloudEnabled ? (
@@ -368,6 +407,24 @@ export default function APIPageClient({ machineId }) {
             ))}
           </div>
         )}
+      </Card>
+
+      {/* Providers Overview */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold">Providers Overview</h2>
+            <p className="text-sm text-text-muted">
+              {providerStats.filter((item) => item.total > 0).length} configured of {providerStats.length} available providers
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {providerStats.map((item) => (
+            <ProviderOverviewCard key={item.id} item={item} />
+          ))}
+        </div>
       </Card>
 
       {/* Available Endpoints */}
@@ -694,6 +751,69 @@ APIPageClient.propTypes = {
   machineId: PropTypes.string.isRequired,
 };
 
+function ProviderOverviewCard({ item }) {
+  const [imgError, setImgError] = useState(false);
+
+  const statusVariant =
+    item.errors > 0 ? "text-red-500" :
+    item.connected > 0 ? "text-green-500" :
+    "text-text-muted";
+
+  return (
+    <div className="border border-border rounded-lg p-3 hover:bg-surface/40 transition-colors">
+      <div className="flex items-center gap-2.5">
+        <div
+          className="size-8 rounded-lg flex items-center justify-center"
+          style={{ backgroundColor: `${item.provider.color || "#888"}15` }}
+        >
+          {imgError ? (
+            <span
+              className="text-[10px] font-bold"
+              style={{ color: item.provider.color || "#888" }}
+            >
+              {item.provider.textIcon || item.provider.id.slice(0, 2).toUpperCase()}
+            </span>
+          ) : (
+            <Image
+              src={`/providers/${item.provider.id}.png`}
+              alt={item.provider.name}
+              width={26}
+              height={26}
+              className="object-contain rounded-lg"
+              sizes="26px"
+              onError={() => setImgError(true)}
+            />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold truncate">{item.provider.name}</p>
+          <p className={`text-xs ${statusVariant}`}>
+            {item.total === 0 ? "Not configured" : `${item.connected} active · ${item.errors} error`}
+          </p>
+        </div>
+
+        <span className="text-xs text-text-muted">#{item.total}</span>
+      </div>
+    </div>
+  );
+}
+
+ProviderOverviewCard.propTypes = {
+  item: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    provider: PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      name: PropTypes.string.isRequired,
+      color: PropTypes.string,
+      textIcon: PropTypes.string,
+    }).isRequired,
+    total: PropTypes.number.isRequired,
+    connected: PropTypes.number.isRequired,
+    errors: PropTypes.number.isRequired,
+  }).isRequired,
+};
+
 // -- Sub-component: Endpoint Section ------------------------------------------
 
 function EndpointSection({ icon, iconColor, iconBg, title, path, description, models, expanded, onToggle, copy, copied, baseUrl }) {
@@ -707,8 +827,9 @@ function EndpointSection({ icon, iconColor, iconBg, title, path, description, mo
     return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
   }, [models]);
 
-  const providerColor = (id) => AI_PROVIDERS[id]?.color || "#888";
-  const providerName  = (id) => AI_PROVIDERS[id]?.name  || id;
+  const resolveProvider = (id) => AI_PROVIDERS[id] || getProviderByAlias(id);
+  const providerColor = (id) => resolveProvider(id)?.color || "#888";
+  const providerName = (id) => resolveProvider(id)?.name || id;
   const copyId = `endpoint_${path}`;
 
   return (

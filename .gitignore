@@ -51,6 +51,9 @@ docs/*
 !docs/ARCHITECTURE.md
 !docs/CODEBASE_DOCUMENTATION.md
 !docs/CONTRIBUTING.md
+!docs/EXECUTION_CONTEXT_PROVIDER_SYNC.md
+!docs/TASK_NEBIUS_BACKEND_ENABLEMENT.md
+!docs/frontend-backend-provider-gap-report.md
 test/*
 bin/*
 open-sse/test/*

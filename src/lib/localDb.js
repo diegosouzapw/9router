@@ -800,31 +800,17 @@ export async function getPricingForModel(provider, model) {
     return pricing[provider][model];
   }
 
-  // Fallback: map provider ID to alias
-  const PROVIDER_ID_TO_ALIAS = {
-    claude: "cc",
-    codex: "cx",
-    "gemini-cli": "gc",
-    qwen: "qw",
-    iflow: "if",
-    antigravity: "ag",
-    github: "gh",
-    kiro: "kr",
-    cursor: "cu",
-    openai: "openai",
-    anthropic: "anthropic",
-    gemini: "gemini",
-    openrouter: "openrouter",
-    glm: "glm",
-    kimi: "kimi",
-    "kimi-coding": "kmc",
-    minimax: "minimax",
-    "minimax-cn": "minimax",
-  };
-
+  // Fallback: use generated provider ID -> alias mapping from registry.
+  const { PROVIDER_ID_TO_ALIAS } = await import("open-sse/config/providerModels.js");
   const alias = PROVIDER_ID_TO_ALIAS[provider];
   if (alias && pricing[alias]) {
     return pricing[alias][model] || null;
+  }
+
+  // Compatibility fallback for regional IDs that may reuse core pricing tables.
+  const normalizedProvider = provider?.replace(/-cn$/, "");
+  if (normalizedProvider && normalizedProvider !== provider && pricing[normalizedProvider]) {
+    return pricing[normalizedProvider][model] || null;
   }
 
   return null;

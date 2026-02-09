@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById, updateProviderConnection, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
   CODEX_CONFIG,
   KIRO_CONFIG,
 } from "@/lib/oauth/constants/oauth";
+import { validateProviderApiKey } from "@/lib/providers/validation";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -305,192 +305,24 @@ async function testOAuthConnection(connection) {
  * Test API key connection
  */
 async function testApiKeyConnection(connection) {
-  // OpenAI Compatible providers - test via /models endpoint
-  if (isOpenAICompatibleProvider(connection.provider)) {
-    const modelsBase = connection.providerSpecificData?.baseUrl;
-    if (!modelsBase) {
-      return { valid: false, error: "Missing base URL" };
-    }
-    try {
-      const modelsUrl = `${modelsBase.replace(/\/$/, "")}/models`;
-      const res = await fetch(modelsUrl, {
-        headers: { "Authorization": `Bearer ${connection.apiKey}` },
-      });
-      return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
-    } catch (err) {
-      return { valid: false, error: err.message };
-    }
+  if (!connection.apiKey) {
+    return { valid: false, error: "Missing API key" };
   }
 
-  // Anthropic Compatible providers - test via /models endpoint
-  if (isAnthropicCompatibleProvider(connection.provider)) {
-    let modelsBase = connection.providerSpecificData?.baseUrl;
-    if (!modelsBase) {
-      return { valid: false, error: "Missing base URL" };
-    }
-    try {
-      modelsBase = modelsBase.replace(/\/$/, "");
-      if (modelsBase.endsWith("/messages")) {
-        modelsBase = modelsBase.slice(0, -9);
-      }
-      
-      const modelsUrl = `${modelsBase}/models`;
-      const res = await fetch(modelsUrl, {
-        headers: { 
-          "x-api-key": connection.apiKey,
-          "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${connection.apiKey}`
-        },
-      });
-      return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
-    } catch (err) {
-      return { valid: false, error: err.message };
-    }
+  const result = await validateProviderApiKey({
+    provider: connection.provider,
+    apiKey: connection.apiKey,
+    providerSpecificData: connection.providerSpecificData,
+  });
+
+  if (result.unsupported) {
+    return { valid: false, error: "Provider test not supported" };
   }
 
-  try {
-    switch (connection.provider) {
-      case "openai": {
-        const res = await fetch("https://api.openai.com/v1/models", {
-          headers: { Authorization: `Bearer ${connection.apiKey}` },
-        });
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
-      }
-
-      case "anthropic": {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": connection.apiKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "claude-3-haiku-20240307",
-            max_tokens: 1,
-            messages: [{ role: "user", content: "test" }],
-          }),
-        });
-        const valid = res.status !== 401;
-        return { valid, error: valid ? null : "Invalid API key" };
-      }
-
-      case "gemini": {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`);
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
-      }
-
-      case "openrouter": {
-        const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
-          headers: { Authorization: `Bearer ${connection.apiKey}` },
-        });
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
-      }
-
-      case "glm": {
-        // GLM uses Claude-compatible API at api.z.ai
-        const res = await fetch("https://api.z.ai/api/anthropic/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": connection.apiKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "glm-4.7",
-            max_tokens: 1,
-            messages: [{ role: "user", content: "test" }],
-          }),
-        });
-        const valid = res.status !== 401 && res.status !== 403;
-        return { valid, error: valid ? null : "Invalid API key" };
-      }
-
-      case "minimax":
-      case "minimax-cn": {
-        // MiniMax uses Claude-compatible API
-        const minimaxEndpoints = {
-          minimax: "https://api.minimax.io/anthropic/v1/messages",
-          "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
-        };
-        const res = await fetch(minimaxEndpoints[connection.provider], {
-          method: "POST",
-          headers: {
-            "x-api-key": connection.apiKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "minimax-m2",
-            max_tokens: 1,
-            messages: [{ role: "user", content: "test" }],
-          }),
-        });
-        const valid = res.status !== 401 && res.status !== 403;
-        return { valid, error: valid ? null : "Invalid API key" };
-      }
-
-      case "kimi": {
-        // Kimi uses Moonshot OpenAI-compatible endpoint
-        const moonshotRes = await fetch("https://api.moonshot.ai/v1/models", {
-          headers: { Authorization: `Bearer ${connection.apiKey}` },
-        });
-        return { valid: moonshotRes.ok, error: moonshotRes.ok ? null : "Invalid API key" };
-      }
-
-      case "kimi-coding": {
-        // Legacy Kimi Coding uses Claude-compatible API
-        const res = await fetch("https://api.kimi.com/coding/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": connection.apiKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "kimi-latest",
-            max_tokens: 1,
-            messages: [{ role: "user", content: "test" }],
-          }),
-        });
-        const valid = res.status !== 401 && res.status !== 403;
-        return { valid, error: valid ? null : "Invalid API key" };
-      }
-
-      case "deepseek": {
-        const res = await fetch("https://api.deepseek.com/models", {
-          headers: { Authorization: `Bearer ${connection.apiKey}` },
-        });
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
-      }
-
-      case "groq": {
-        const res = await fetch("https://api.groq.com/openai/v1/models", {
-          headers: { Authorization: `Bearer ${connection.apiKey}` },
-        });
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
-      }
-
-      case "mistral": {
-        const res = await fetch("https://api.mistral.ai/v1/models", {
-          headers: { Authorization: `Bearer ${connection.apiKey}` },
-        });
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
-      }
-
-      case "xai": {
-        const res = await fetch("https://api.x.ai/v1/models", {
-          headers: { Authorization: `Bearer ${connection.apiKey}` },
-        });
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
-      }
-
-      default:
-        return { valid: false, error: "Provider test not supported" };
-    }
-  } catch (err) {
-    return { valid: false, error: err.message };
-  }
+  return {
+    valid: !!result.valid,
+    error: result.valid ? null : (result.error || "Invalid API key"),
+  };
 }
 
 // POST /api/providers/[id]/test - Test connection
