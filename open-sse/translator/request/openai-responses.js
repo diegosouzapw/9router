@@ -13,6 +13,25 @@ import { FORMATS } from "../formats.js";
 export function openaiResponsesToOpenAIRequest(model, body, stream, credentials) {
   if (!body.input) return body;
 
+  // Validate unsupported features — return clear errors instead of silent failure
+  const UNSUPPORTED_TOOLS = ["file_search", "code_interpreter", "web_search_preview"];
+  if (body.tools?.length) {
+    for (const tool of body.tools) {
+      if (UNSUPPORTED_TOOLS.includes(tool.type)) {
+        const error = new Error(`Unsupported Responses API feature: ${tool.type} tool type is not supported by 9router`);
+        error.statusCode = 400;
+        error.errorType = "unsupported_feature";
+        throw error;
+      }
+    }
+  }
+  if (body.background) {
+    const error = new Error("Unsupported Responses API feature: background mode is not supported by 9router");
+    error.statusCode = 400;
+    error.errorType = "unsupported_feature";
+    throw error;
+  }
+
   const result = { ...body };
   result.messages = [];
 

@@ -56,6 +56,9 @@ export function createSSEStream(options = {}) {
   // Track content length for usage estimation (both modes)
   let totalContentLength = 0;
 
+  // Guard against duplicate [DONE] events — ensures exactly one per stream
+  let doneSent = false;
+
   // Per-stream instances to avoid shared state with concurrent streams
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -155,9 +158,12 @@ export function createSSEStream(options = {}) {
         if (!parsed) continue;
 
         if (parsed && parsed.done) {
-          const output = "data: [DONE]\n\n";
-          reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(encoder.encode(output));
+          if (!doneSent) {
+            doneSent = true;
+            const output = "data: [DONE]\n\n";
+            reqLogger?.appendConvertedChunk?.(output);
+            controller.enqueue(encoder.encode(output));
+          }
           continue;
         }
 
@@ -318,10 +324,13 @@ export function createSSEStream(options = {}) {
          * emitted once at stream end when merged into the final translated chunk.
          */
 
-        // Send [DONE] and log usage
-        const doneOutput = "data: [DONE]\n\n";
-        reqLogger?.appendConvertedChunk?.(doneOutput);
-        controller.enqueue(encoder.encode(doneOutput));
+        // Send [DONE] (only if not already sent during transform)
+        if (!doneSent) {
+          doneSent = true;
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(encoder.encode(doneOutput));
+        }
 
         // Estimate usage if provider didn't return valid usage (for translate mode)
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {

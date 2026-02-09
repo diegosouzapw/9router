@@ -1,6 +1,10 @@
 /**
  * Cursor Protobuf Encoder/Decoder
  * Implements ConnectRPC protobuf wire format for Cursor API
+ *
+ * Schema Version: reverse-engineered from Cursor client traffic.
+ * If Cursor updates their protocol, unknown field warnings will appear
+ * in the logs — update the FIELD map and bump the version below.
  */
 
 import { v4 as uuidv4 } from "uuid";
@@ -8,6 +12,12 @@ import zlib from "zlib";
 
 const DEBUG = true;
 const log = (tag, ...args) => DEBUG && console.log(`[PROTOBUF:${tag}]`, ...args);
+
+/**
+ * Schema version — bump when updating field definitions.
+ * Logged in warnings to help correlate unknown fields with Cursor client versions.
+ */
+const PROTOBUF_SCHEMA_VERSION = "1.1.3";
 
 // ==================== SCHEMAS ====================
 
@@ -126,6 +136,13 @@ const FIELD = {
   // Thinking
   THINKING_TEXT: 1
 };
+
+// Known response field numbers — used to detect unknown fields from protocol updates
+const KNOWN_RESPONSE_FIELDS = new Set([
+  FIELD.TOOL_CALL, FIELD.RESPONSE,
+  FIELD.TOOL_ID, FIELD.TOOL_NAME, FIELD.TOOL_RAW_ARGS, FIELD.TOOL_IS_LAST, FIELD.TOOL_MCP_PARAMS,
+  FIELD.RESPONSE_TEXT, FIELD.THINKING
+]);
 
 // ==================== PRIMITIVE ENCODING ====================
 
@@ -554,6 +571,13 @@ export function extractTextFromResponse(payload) {
   try {
     const fields = decodeMessage(payload);
 
+    // Warn about unknown field numbers — may indicate a Cursor protocol update
+    for (const fieldNum of fields.keys()) {
+      if (!KNOWN_RESPONSE_FIELDS.has(fieldNum)) {
+        log("SCHEMA", `Unknown response field #${fieldNum} detected. Schema v${PROTOBUF_SCHEMA_VERSION} may be outdated.`);
+      }
+    }
+
     // Field 1: ClientSideToolV2Call
     if (fields.has(FIELD.TOOL_CALL)) {
       const toolCall = extractToolCall(fields.get(FIELD.TOOL_CALL)[0].value);
@@ -574,8 +598,16 @@ export function extractTextFromResponse(payload) {
 
     return { text: null, error: null, toolCall: null, thinking: null };
   } catch (err) {
-    log("EXTRACT", `Error: ${err.message}`);
-    return { text: null, error: null, toolCall: null, thinking: null };
+    // Graceful fallback — return raw payload instead of crashing
+    log("EXTRACT", `Decode failed (schema v${PROTOBUF_SCHEMA_VERSION}): ${err.message}`);
+    return {
+      text: null,
+      error: null,
+      toolCall: null,
+      thinking: null,
+      raw: Buffer.from(payload).toString("base64"),
+      decodeError: err.message
+    };
   }
 }
 
