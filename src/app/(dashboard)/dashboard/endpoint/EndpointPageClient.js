@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import PropTypes from "prop-types";
 import Image from "next/image";
 import { Card, Button, Input, Modal, CardSkeleton } from "@/shared/components";
@@ -29,6 +29,7 @@ export default function APIPageClient({ machineId }) {
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [cloudStatus, setCloudStatus] = useState(null);
   const [syncStep, setSyncStep] = useState(""); // "syncing" | "verifying" | "disabling" | ""
+  const [selectedProvider, setSelectedProvider] = useState(null); // for provider models popup
 
   const { copied, copy } = useCopyToClipboard();
 
@@ -422,7 +423,7 @@ export default function APIPageClient({ machineId }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {providerStats.map((item) => (
-            <ProviderOverviewCard key={item.id} item={item} />
+            <ProviderOverviewCard key={item.id} item={item} onClick={() => setSelectedProvider(item)} />
           ))}
         </div>
       </Card>
@@ -743,6 +744,16 @@ export default function APIPageClient({ machineId }) {
           </div>
         </div>
       </Modal>
+      {/* Provider Models Popup */}
+      {selectedProvider && (
+        <ProviderModelsModal
+          provider={selectedProvider}
+          models={allModels}
+          copy={copy}
+          copied={copied}
+          onClose={() => setSelectedProvider(null)}
+        />
+      )}
     </div>
   );
 }
@@ -751,7 +762,7 @@ APIPageClient.propTypes = {
   machineId: PropTypes.string.isRequired,
 };
 
-function ProviderOverviewCard({ item }) {
+function ProviderOverviewCard({ item, onClick }) {
   const [imgError, setImgError] = useState(false);
 
   const statusVariant =
@@ -760,7 +771,13 @@ function ProviderOverviewCard({ item }) {
     "text-text-muted";
 
   return (
-    <div className="border border-border rounded-lg p-3 hover:bg-surface/40 transition-colors">
+    <div
+      className="border border-border rounded-lg p-3 hover:bg-surface/40 transition-colors cursor-pointer"
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onClick?.()}
+    >
       <div className="flex items-center gap-2.5">
         <div
           className="size-8 rounded-lg flex items-center justify-center"
@@ -812,6 +829,79 @@ ProviderOverviewCard.propTypes = {
     connected: PropTypes.number.isRequired,
     errors: PropTypes.number.isRequired,
   }).isRequired,
+  onClick: PropTypes.func,
+};
+
+// -- Sub-component: Provider Models Modal ------------------------------------------
+
+function ProviderModelsModal({ provider, models, copy, copied, onClose }) {
+  // Get provider alias for matching models
+  const providerAlias = provider.provider.alias || provider.id;
+  const providerModels = useMemo(() => {
+    return models.filter(m => m.owned_by === providerAlias || m.owned_by === provider.id);
+  }, [models, providerAlias, provider.id]);
+
+  const chatModels = providerModels.filter(m => !m.type);
+  const embeddingModels = providerModels.filter(m => m.type === "embedding");
+  const imageModels = providerModels.filter(m => m.type === "image");
+
+  const renderModelGroup = (title, icon, groupModels) => {
+    if (groupModels.length === 0) return null;
+    return (
+      <div className="mb-4">
+        <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-sm">{icon}</span>
+          {title} ({groupModels.length})
+        </h4>
+        <div className="flex flex-col gap-1">
+          {groupModels.map(m => {
+            const copyKey = `modal-${m.id}`;
+            return (
+              <div key={m.id} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-surface/60 group">
+                <code className="text-sm font-mono flex-1 truncate">{m.id}</code>
+                {m.custom && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">custom</span>
+                )}
+                <button
+                  onClick={() => copy(m.id, copyKey)}
+                  className="p-1 hover:bg-sidebar rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Copy model ID"
+                >
+                  <span className="material-symbols-outlined text-sm">
+                    {copied === copyKey ? "check" : "content_copy"}
+                  </span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title={`${provider.provider.name} — Models`}>
+      <div className="max-h-[60vh] overflow-y-auto">
+        {providerModels.length === 0 ? (
+          <p className="text-sm text-text-muted py-4 text-center">No models available for this provider.</p>
+        ) : (
+          <>
+            {renderModelGroup("Chat", "chat", chatModels)}
+            {renderModelGroup("Embedding", "data_array", embeddingModels)}
+            {renderModelGroup("Image", "image", imageModels)}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+ProviderModelsModal.propTypes = {
+  provider: PropTypes.object.isRequired,
+  models: PropTypes.array.isRequired,
+  copy: PropTypes.func.isRequired,
+  copied: PropTypes.string,
+  onClose: PropTypes.func.isRequired,
 };
 
 // -- Sub-component: Endpoint Section ------------------------------------------

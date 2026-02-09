@@ -58,6 +58,32 @@ export const IMAGE_PROVIDERS = {
     ],
     supportedSizes: ["1024x1024", "512x512"],
   },
+
+  antigravity: {
+    id: "antigravity",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
+    authType: "oauth",
+    authHeader: "bearer",
+    format: "gemini-image",  // Special format: uses Gemini generateContent API
+    models: [
+      { id: "gemini-2.5-flash-preview-image-generation", name: "Nano Banana" },
+    ],
+    supportedSizes: ["1024x1024"],
+  },
+
+  nebius: {
+    id: "nebius",
+    baseUrl: "https://api.tokenfactory.nebius.com/v1/images/generations",
+    fallbackUrl: "https://api.studio.nebius.com/v1/images/generations",
+    authType: "apikey",
+    authHeader: "bearer",
+    format: "openai",
+    models: [
+      { id: "black-forest-labs/flux-schnell", name: "FLUX.1 Schnell" },
+      { id: "black-forest-labs/flux-dev", name: "FLUX.1 Dev" },
+    ],
+    supportedSizes: ["1024x1024", "512x512"],
+  },
 };
 
 /**

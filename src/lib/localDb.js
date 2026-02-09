@@ -883,3 +883,118 @@ export async function resetAllPricing() {
     return db.data.pricing;
   });
 }
+
+// ============ Custom Models ============
+
+/**
+ * Get custom models for a specific provider
+ * @param {string} providerId - Provider ID (e.g., "openai", "anthropic")
+ * @returns {Array} Array of { id, name } objects
+ */
+export async function getCustomModels(providerId) {
+  const db = await getDb();
+  const all = db.data.customModels || {};
+  if (providerId) return all[providerId] || [];
+  return all;
+}
+
+/**
+ * Get all custom models grouped by provider
+ * @returns {Object} Map of providerId -> [{ id, name }]
+ */
+export async function getAllCustomModels() {
+  const db = await getDb();
+  return db.data.customModels || {};
+}
+
+/**
+ * Add a custom model to a provider
+ * @param {string} providerId - Provider ID
+ * @param {string} modelId - Model identifier
+ * @param {string} modelName - Display name (optional, defaults to modelId)
+ * @returns {Object} The added model { id, name }
+ */
+export async function addCustomModel(providerId, modelId, modelName) {
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.customModels) db.data.customModels = {};
+    if (!db.data.customModels[providerId]) db.data.customModels[providerId] = [];
+
+    // Deduplicate
+    const exists = db.data.customModels[providerId].some(m => m.id === modelId);
+    if (exists) {
+      return db.data.customModels[providerId].find(m => m.id === modelId);
+    }
+
+    const model = { id: modelId, name: modelName || modelId };
+    db.data.customModels[providerId].push(model);
+    await db.write();
+    return model;
+  });
+}
+
+/**
+ * Remove a custom model from a provider
+ * @param {string} providerId - Provider ID
+ * @param {string} modelId - Model identifier to remove
+ * @returns {boolean} true if removed
+ */
+export async function removeCustomModel(providerId, modelId) {
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.customModels?.[providerId]) return false;
+
+    const before = db.data.customModels[providerId].length;
+    db.data.customModels[providerId] = db.data.customModels[providerId].filter(m => m.id !== modelId);
+
+    // Clean up empty arrays
+    if (db.data.customModels[providerId].length === 0) {
+      delete db.data.customModels[providerId];
+    }
+
+    const removed = db.data.customModels[providerId]?.length !== before || before > 0;
+    if (removed) await db.write();
+    return removed;
+  });
+}
+
+// ============ Proxy Config ============
+
+/**
+ * Get proxy configuration
+ * @returns {Object} { global: string|null, providers: { providerId: string } }
+ */
+export async function getProxyConfig() {
+  const db = await getDb();
+  return db.data.proxyConfig || { global: null, providers: {} };
+}
+
+/**
+ * Update proxy configuration (merge)
+ * @param {Object} config - { global?: string, providers?: { providerId: string } }
+ */
+export async function setProxyConfig(config) {
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.proxyConfig) {
+      db.data.proxyConfig = { global: null, providers: {} };
+    }// Merge
+    if (config.global !== undefined) {
+      db.data.proxyConfig.global = config.global || null;
+    }
+    if (config.providers) {
+      db.data.proxyConfig.providers = {
+        ...db.data.proxyConfig.providers,
+        ...config.providers,
+      };
+      // Remove empty entries
+      for (const [k, v] of Object.entries(db.data.proxyConfig.providers)) {
+        if (!v) delete db.data.proxyConfig.providers[k];
+      }
+    }
+    await db.write();
+    return db.data.proxyConfig;
+  });
+}
+
+

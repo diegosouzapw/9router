@@ -1,5 +1,5 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { getProviderConnections, getCombos } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getAllCustomModels } from "@/lib/localDb";
 import { getAllEmbeddingModels } from "open-sse/config/embeddingRegistry.js";
 import { getAllImageModels } from "open-sse/config/imageRegistry.js";
 
@@ -107,6 +107,35 @@ export async function GET() {
         type: "image",
         supported_sizes: imgModel.supportedSizes,
       });
+    }
+
+    // Add custom models (user-defined)
+    try {
+      const customModelsMap = await getAllCustomModels();
+      for (const [providerId, providerCustomModels] of Object.entries(customModelsMap)) {
+        const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+        // Only include if provider is active (or no connections configured)
+        if (connections.length > 0 && !activeAliases.has(alias)) continue;
+
+        for (const model of providerCustomModels) {
+          // Skip if already added as built-in
+          const fullId = `${alias}/${model.id}`;
+          if (models.some(m => m.id === fullId)) continue;
+
+          models.push({
+            id: fullId,
+            object: "model",
+            created: timestamp,
+            owned_by: alias,
+            permission: [],
+            root: model.id,
+            parent: null,
+            custom: true,
+          });
+        }
+      }
+    } catch (e) {
+      console.log("Could not fetch custom models");
     }
 
     return Response.json({

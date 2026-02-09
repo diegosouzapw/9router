@@ -510,6 +510,16 @@ export default function ProviderDetailPage() {
         </h2>
         {renderModelsSection()}
 
+        {/* Custom Models — available for ALL providers */}
+        {!isCompatible && (
+          <CustomModelsSection
+            providerId={providerId}
+            providerAlias={providerDisplayAlias}
+            copied={copied}
+            onCopy={copy}
+          />
+        )}
+
       </Card>
 
       {/* Modals */}
@@ -727,6 +737,161 @@ PassthroughModelRow.propTypes = {
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
   onDeleteAlias: PropTypes.func.isRequired,
+};
+
+// ============ Custom Models Section (for ALL providers) ============
+
+function CustomModelsSection({ providerId, providerAlias, copied, onCopy }) {
+  const [customModels, setCustomModels] = useState([]);
+  const [newModelId, setNewModelId] = useState("");
+  const [newModelName, setNewModelName] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const fetchCustomModels = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/provider-models?provider=${providerId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCustomModels(data.models || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch custom models:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [providerId]);
+
+  useEffect(() => {
+    fetchCustomModels();
+  }, [fetchCustomModels]);
+
+  const handleAdd = async () => {
+    if (!newModelId.trim() || adding) return;
+    setAdding(true);
+    try {
+      const res = await fetch("/api/provider-models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: providerId,
+          modelId: newModelId.trim(),
+          modelName: newModelName.trim() || undefined,
+        }),
+      });
+      if (res.ok) {
+        setNewModelId("");
+        setNewModelName("");
+        await fetchCustomModels();
+      }
+    } catch (e) {
+      console.error("Failed to add custom model:", e);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = async (modelId) => {
+    try {
+      await fetch(`/api/provider-models?provider=${providerId}&model=${encodeURIComponent(modelId)}`, {
+        method: "DELETE",
+      });
+      await fetchCustomModels();
+    } catch (e) {
+      console.error("Failed to remove custom model:", e);
+    }
+  };
+
+  return (
+    <div className="mt-6 pt-6 border-t border-border">
+      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+        <span className="material-symbols-outlined text-base text-primary">tune</span>
+        Custom Models
+      </h3>
+      <p className="text-xs text-text-muted mb-3">
+        Add model IDs not in the default list. These will be available for routing.
+      </p>
+
+      {/* Add form */}
+      <div className="flex items-end gap-2 mb-3">
+        <div className="flex-1">
+          <label htmlFor="custom-model-id" className="text-xs text-text-muted mb-1 block">Model ID</label>
+          <input
+            id="custom-model-id"
+            type="text"
+            value={newModelId}
+            onChange={(e) => setNewModelId(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+            placeholder="e.g. gpt-4.5-turbo"
+            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div className="w-40">
+          <label htmlFor="custom-model-name" className="text-xs text-text-muted mb-1 block">Display Name</label>
+          <input
+            id="custom-model-name"
+            type="text"
+            value={newModelName}
+            onChange={(e) => setNewModelName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+            placeholder="Optional"
+            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+          />
+        </div>
+        <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModelId.trim() || adding}>
+          {adding ? "Adding..." : "Add"}
+        </Button>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <p className="text-xs text-text-muted">Loading...</p>
+      ) : customModels.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {customModels.map((model) => {
+            const fullModel = `${providerAlias}/${model.id}`;
+            const copyKey = `custom-${model.id}`;
+            return (
+              <div key={model.id} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-sidebar/50">
+                <span className="material-symbols-outlined text-base text-primary">tune</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{model.name || model.id}</p>
+                  <div className="flex items-center gap-1 mt-1">
+                    <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+                    <button
+                      onClick={() => onCopy(fullModel, copyKey)}
+                      className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+                      title="Copy model"
+                    >
+                      <span className="material-symbols-outlined text-sm">
+                        {copied === copyKey ? "check" : "content_copy"}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleRemove(model.id)}
+                  className="p-1 hover:bg-red-50 rounded text-red-500"
+                  title="Remove custom model"
+                >
+                  <span className="material-symbols-outlined text-sm">delete</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-xs text-text-muted">No custom models added yet.</p>
+      )}
+    </div>
+  );
+}
+
+CustomModelsSection.propTypes = {
+  providerId: PropTypes.string.isRequired,
+  providerAlias: PropTypes.string.isRequired,
+  copied: PropTypes.string,
+  onCopy: PropTypes.func.isRequired,
 };
 
 function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
