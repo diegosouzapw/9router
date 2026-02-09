@@ -3,7 +3,7 @@ import { translateRequest, needsTranslation } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger, COLORS } from "../utils/stream.js";
 import { createStreamController, pipeWithDisconnect } from "../utils/streamHandler.js";
-import { addBufferToUsage, filterUsageForFormat } from "../utils/usageTracking.js";
+import { addBufferToUsage, filterUsageForFormat, estimateUsage } from "../utils/usageTracking.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
@@ -246,6 +246,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (translatedResponse?.usage) {
       const buffered = addBufferToUsage(translatedResponse.usage);
       translatedResponse.usage = filterUsageForFormat(buffered, sourceFormat);
+    } else {
+      // Fallback: estimate usage when provider didn't return any
+      const contentLength = JSON.stringify(translatedResponse?.choices?.[0]?.message?.content || "").length;
+      if (contentLength > 0) {
+        const estimated = estimateUsage(body, contentLength, sourceFormat);
+        translatedResponse.usage = filterUsageForFormat(estimated, sourceFormat);
+      }
     }
 
     return {
