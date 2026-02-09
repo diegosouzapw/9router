@@ -1,7 +1,6 @@
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/constants.js";
-import { PROVIDER_REGISTRY } from "open-sse/config/providerRegistry.js";
-import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { getRegistryEntry } from "open-sse/config/providerRegistry.js";
 import { getProviderCredentials, extractApiKey, isValidApiKey } from "@/sse/services/auth.js";
 import { handleEmbedding } from "open-sse/handlers/embeddings.js";
 import * as log from "@/sse/utils/logger.js";
@@ -25,13 +24,13 @@ export async function OPTIONS() {
 export async function POST(request, { params }) {
   const { provider: rawProvider } = await params;
 
-  const providerAlias = PROVIDER_ID_TO_ALIAS[rawProvider] || rawProvider;
-  const providerEntry = PROVIDER_REGISTRY[rawProvider] ||
-    Object.values(PROVIDER_REGISTRY).find(p => p.alias === rawProvider);
+  const providerEntry = getRegistryEntry(rawProvider);
 
   if (!providerEntry) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `Unknown provider: ${rawProvider}`);
   }
+
+  const providerAlias = providerEntry.alias || providerEntry.id;
 
   let body;
   try {

@@ -2,7 +2,7 @@ import { getProviderConnections, getAllCustomModels } from "@/lib/localDb";
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getAllEmbeddingModels } from "open-sse/config/embeddingRegistry.js";
 import { getAllImageModels } from "open-sse/config/imageRegistry.js";
-import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 
 /**
  * GET /api/models/catalog
@@ -17,8 +17,8 @@ export async function GET() {
     const catalog = {};
 
     // Built-in chat models
-    for (const [providerId, models] of Object.entries(PROVIDER_MODELS)) {
-      const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+    for (const [alias, models] of Object.entries(PROVIDER_MODELS)) {
+      const providerId = ALIAS_TO_ID[alias] || alias;
       if (!catalog[alias]) {
         catalog[alias] = {
           provider: AI_PROVIDERS[providerId]?.name || alias,
