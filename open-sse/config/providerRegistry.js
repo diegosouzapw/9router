@@ -470,6 +470,157 @@ export const REGISTRY = {
     },
     models: [],
   },
+
+  deepseek: {
+    id: "deepseek",
+    alias: "ds",
+    format: "openai",
+    executor: "default",
+    baseUrl: "https://api.deepseek.com/v1/chat/completions",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "deepseek-chat", name: "DeepSeek V3.2 Chat" },
+      { id: "deepseek-reasoner", name: "DeepSeek V3.2 Reasoner" },
+    ],
+  },
+
+  groq: {
+    id: "groq",
+    alias: "groq",
+    format: "openai",
+    executor: "default",
+    baseUrl: "https://api.groq.com/openai/v1/chat/completions",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
+      { id: "meta-llama/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },
+      { id: "qwen/qwen3-32b", name: "Qwen3 32B" },
+      { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B" },
+    ],
+  },
+
+  xai: {
+    id: "xai",
+    alias: "xai",
+    format: "openai",
+    executor: "default",
+    baseUrl: "https://api.x.ai/v1/chat/completions",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "grok-4", name: "Grok 4" },
+      { id: "grok-4-fast-reasoning", name: "Grok 4 Fast Reasoning" },
+      { id: "grok-code-fast-1", name: "Grok Code Fast" },
+      { id: "grok-3", name: "Grok 3" },
+    ],
+  },
+
+  mistral: {
+    id: "mistral",
+    alias: "mistral",
+    format: "openai",
+    executor: "default",
+    baseUrl: "https://api.mistral.ai/v1/chat/completions",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "mistral-large-latest", name: "Mistral Large 3" },
+      { id: "codestral-latest", name: "Codestral" },
+      { id: "mistral-medium-latest", name: "Mistral Medium 3" },
+    ],
+  },
+
+  perplexity: {
+    id: "perplexity",
+    alias: "pplx",
+    format: "openai",
+    executor: "default",
+    baseUrl: "https://api.perplexity.ai/chat/completions",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "sonar-pro", name: "Sonar Pro" },
+      { id: "sonar", name: "Sonar" },
+    ],
+  },
+
+  together: {
+    id: "together",
+    alias: "together",
+    format: "openai",
+    executor: "default",
+    baseUrl: "https://api.together.xyz/v1/chat/completions",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", name: "Llama 3.3 70B Turbo" },
+      { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1" },
+      { id: "Qwen/Qwen3-235B-A22B", name: "Qwen3 235B" },
+      { id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8", name: "Llama 4 Maverick" },
+    ],
+  },
+
+  fireworks: {
+    id: "fireworks",
+    alias: "fireworks",
+    format: "openai",
+    executor: "default",
+    baseUrl: "https://api.fireworks.ai/inference/v1/chat/completions",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "accounts/fireworks/models/deepseek-v3p1", name: "DeepSeek V3.1" },
+      { id: "accounts/fireworks/models/llama-v3p3-70b-instruct", name: "Llama 3.3 70B" },
+      { id: "accounts/fireworks/models/qwen3-235b-a22b", name: "Qwen3 235B" },
+    ],
+  },
+
+  cerebras: {
+    id: "cerebras",
+    alias: "cerebras",
+    format: "openai",
+    executor: "default",
+    baseUrl: "https://api.cerebras.ai/v1/chat/completions",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "llama-3.3-70b", name: "Llama 3.3 70B" },
+      { id: "llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout" },
+      { id: "qwen-3-32b", name: "Qwen3 32B" },
+    ],
+  },
+
+  cohere: {
+    id: "cohere",
+    alias: "cohere",
+    format: "openai",
+    executor: "default",
+    baseUrl: "https://api.cohere.com/v2/chat",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "command-r-plus-08-2024", name: "Command R+ (Aug 2024)" },
+      { id: "command-r-08-2024", name: "Command R (Aug 2024)" },
+      { id: "command-a-03-2025", name: "Command A (Mar 2025)" },
+    ],
+  },
+
+  nvidia: {
+    id: "nvidia",
+    alias: "nvidia",
+    format: "openai",
+    executor: "default",
+    baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
+    authType: "apikey",
+    authHeader: "bearer",
+    models: [
+      { id: "nvidia/llama-3.3-70b-instruct", name: "Llama 3.3 70B" },
+      { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },
+      { id: "deepseek/deepseek-r1", name: "DeepSeek R1" },
+    ],
+  },
 };
 
 // ── Generator Functions ───────────────────────────────────────────────────

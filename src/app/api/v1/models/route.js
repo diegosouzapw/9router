@@ -1,5 +1,7 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getProviderConnections, getCombos } from "@/lib/localDb";
+import { getAllEmbeddingModels } from "open-sse/config/embeddingRegistry.js";
+import { getAllImageModels } from "open-sse/config/imageRegistry.js";
 
 /**
  * Handle CORS preflight
@@ -16,7 +18,7 @@ export async function OPTIONS() {
 
 /**
  * GET /v1/models - OpenAI compatible models list
- * Returns models from all active providers and combos in OpenAI format
+ * Returns models from all active providers, combos, embeddings, and image models in OpenAI format
  */
 export async function GET() {
   try {
@@ -63,7 +65,7 @@ export async function GET() {
       });
     }
 
-    // Add provider models
+    // Add provider models (chat)
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       // If we have active providers, only include those; otherwise include all
       if (connections.length > 0 && !activeAliases.has(alias)) {
@@ -81,6 +83,30 @@ export async function GET() {
           parent: null,
         });
       }
+    }
+
+    // Add embedding models
+    for (const embModel of getAllEmbeddingModels()) {
+      models.push({
+        id: embModel.id,
+        object: "model",
+        created: timestamp,
+        owned_by: embModel.provider,
+        type: "embedding",
+        dimensions: embModel.dimensions,
+      });
+    }
+
+    // Add image models
+    for (const imgModel of getAllImageModels()) {
+      models.push({
+        id: imgModel.id,
+        object: "model",
+        created: timestamp,
+        owned_by: imgModel.provider,
+        type: "image",
+        supported_sizes: imgModel.supportedSizes,
+      });
     }
 
     return Response.json({

@@ -70,3 +70,29 @@ export {
   createSSETransformStreamWithLogger, 
   createPassthroughStreamWithLogger 
 } from "./utils/stream.js";
+
+// Embeddings
+export { handleEmbedding } from "./handlers/embeddings.js";
+export { 
+  EMBEDDING_PROVIDERS, 
+  getEmbeddingProvider, 
+  parseEmbeddingModel, 
+  getAllEmbeddingModels 
+} from "./config/embeddingRegistry.js";
+
+// Image Generation
+export { handleImageGeneration } from "./handlers/imageGeneration.js";
+export { 
+  IMAGE_PROVIDERS, 
+  getImageProvider, 
+  parseImageModel, 
+  getAllImageModels 
+} from "./config/imageRegistry.js";
+
+// Think Tag Parser
+export { 
+  hasThinkTags, 
+  extractThinkTags, 
+  processStreamingThinkDelta, 
+  flushThinkBuffer 
+} from "./utils/thinkTagParser.js";

@@ -4,18 +4,30 @@ import { prepareClaudeRequest } from "./helpers/claudeHelper.js";
 import { filterToOpenAIFormat } from "./helpers/openaiHelper.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 
-// Registry for translators (must be defined before translator module imports below)
-const requestRegistry = new Map();
-const responseRegistry = new Map();
+// Registry for translators.
+// NOTE: translator modules import this file and call register() at module-load time.
+// Using `var` + lazy init avoids TDZ/circular-init crashes under bundlers.
+var requestRegistry;
+var responseRegistry;
+
+function getRequestRegistry() {
+  if (!requestRegistry) requestRegistry = new Map();
+  return requestRegistry;
+}
+
+function getResponseRegistry() {
+  if (!responseRegistry) responseRegistry = new Map();
+  return responseRegistry;
+}
 
 // Register translator (called by each translator module on import)
 export function register(from, to, requestFn, responseFn) {
   const key = `${from}:${to}`;
   if (requestFn) {
-    requestRegistry.set(key, requestFn);
+    getRequestRegistry().set(key, requestFn);
   }
   if (responseFn) {
-    responseRegistry.set(key, responseFn);
+    getResponseRegistry().set(key, responseFn);
   }
 }
 
@@ -57,14 +69,14 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   if (sourceFormat !== targetFormat) {
     // Check for direct translation path first (e.g., Claude → Gemini)
     const directKey = `${sourceFormat}:${targetFormat}`;
-    const directTranslator = requestRegistry.get(directKey);
+    const directTranslator = getRequestRegistry().get(directKey);
     if (directTranslator && sourceFormat !== FORMATS.OPENAI && targetFormat !== FORMATS.OPENAI) {
       result = directTranslator(model, result, stream, credentials);
     } else {
       // Fallback: hub-and-spoke via OpenAI
       // Step 1: source -> openai (if source is not openai)
       if (sourceFormat !== FORMATS.OPENAI) {
-        const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
+        const toOpenAI = getRequestRegistry().get(`${sourceFormat}:${FORMATS.OPENAI}`);
         if (toOpenAI) {
           result = toOpenAI(model, result, stream, credentials);
           // Log OpenAI intermediate format
@@ -74,7 +86,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
       // Step 2: openai -> target (if target is not openai)
       if (targetFormat !== FORMATS.OPENAI) {
-        const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
+        const fromOpenAI = getRequestRegistry().get(`${FORMATS.OPENAI}:${targetFormat}`);
         if (fromOpenAI) {
           result = fromOpenAI(model, result, stream, credentials);
         }
@@ -108,7 +120,7 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
 
   // Check for direct translation path first (e.g., Gemini → Claude)
   const directKey = `${targetFormat}:${sourceFormat}`;
-  const directTranslator = responseRegistry.get(directKey);
+  const directTranslator = getResponseRegistry().get(directKey);
   if (directTranslator && targetFormat !== FORMATS.OPENAI && sourceFormat !== FORMATS.OPENAI) {
     const converted = directTranslator(chunk, state);
     if (converted) {
@@ -122,7 +134,7 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   // Fallback: hub-and-spoke via OpenAI
   // Step 1: target -> openai (if target is not openai)
   if (targetFormat !== FORMATS.OPENAI) {
-    const toOpenAI = responseRegistry.get(`${targetFormat}:${FORMATS.OPENAI}`);
+    const toOpenAI = getResponseRegistry().get(`${targetFormat}:${FORMATS.OPENAI}`);
     if (toOpenAI) {
       results = [];
       const converted = toOpenAI(chunk, state);
@@ -135,7 +147,7 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
 
   // Step 2: openai -> source (if source is not openai)
   if (sourceFormat !== FORMATS.OPENAI) {
-    const fromOpenAI = responseRegistry.get(`${FORMATS.OPENAI}:${sourceFormat}`);
+    const fromOpenAI = getResponseRegistry().get(`${FORMATS.OPENAI}:${sourceFormat}`);
     if (fromOpenAI) {
       const finalResults = [];
       for (const r of results) {
