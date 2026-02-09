@@ -106,10 +106,13 @@ Important compatibility routes:
 - `src/app/api/v1/chat/completions/route.js`
 - `src/app/api/v1/messages/route.js`
 - `src/app/api/v1/responses/route.js`
-- `src/app/api/v1/models/route.js`
+- `src/app/api/v1/models/route.js` — includes custom models with `custom: true`
 - `src/app/api/v1/embeddings/route.js` — embedding generation (6 providers)
-- `src/app/api/v1/images/generations/route.js` — image generation (4 providers)
+- `src/app/api/v1/images/generations/route.js` — image generation (4+ providers incl. Antigravity/Nebius)
 - `src/app/api/v1/messages/count_tokens/route.js`
+- `src/app/api/v1/providers/[provider]/chat/completions/route.js` — dedicated per-provider chat
+- `src/app/api/v1/providers/[provider]/embeddings/route.js` — dedicated per-provider embeddings
+- `src/app/api/v1/providers/[provider]/images/generations/route.js` — dedicated per-provider images
 - `src/app/api/v1beta/models/route.js`
 - `src/app/api/v1beta/models/[...path]/route.js`
 
@@ -118,6 +121,9 @@ Management domains:
 - Auth/settings: `src/app/api/auth/*`, `src/app/api/settings/*`
 - Providers/connections: `src/app/api/providers*`
 - Provider nodes: `src/app/api/provider-nodes*`
+- Custom models: `src/app/api/provider-models` (GET/POST/DELETE)
+- Model catalog: `src/app/api/models/catalog` (GET)
+- Proxy config: `src/app/api/settings/proxy` (GET/PUT)
 - OAuth: `src/app/api/oauth/*`
 - Keys/aliases/combos/pricing: `src/app/api/keys*`, `src/app/api/models/alias`, `src/app/api/combos*`, `src/app/api/pricing`
 - Usage: `src/app/api/usage/*`
@@ -149,7 +155,7 @@ Primary state DB:
 
 - `src/lib/localDb.js`
 - file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset)
-- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
+- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing, **customModels**, **proxyConfig**
 
 Usage DB:
 
@@ -162,7 +168,7 @@ Usage DB:
 - Dashboard cookie auth: `src/proxy.js`, `src/app/api/auth/login/route.js`
 - API key generation/verification: `src/shared/utils/apiKey.js`
 - Provider secrets persisted in `providerConnections` entries
-- Optional proxy support for upstream calls via env proxy variables (`open-sse/utils/proxyFetch.js`)
+- Outbound proxy support via `open-sse/utils/proxyFetch.js` (env vars) and `open-sse/utils/networkProxy.js` (configurable per-provider or global)
 
 ## 5) Cloud Sync
 
@@ -382,6 +388,17 @@ erDiagram
       string connectionId
       string timestamp
     }
+
+    CUSTOM_MODEL {
+      string id
+      string name
+      string providerId
+    }
+
+    PROXY_CONFIG {
+      string global
+      json providers
+    }
 ```
 
 Physical storage files:
@@ -427,13 +444,17 @@ flowchart LR
 ### Route and API Modules
 
 - `src/app/api/v1/*`, `src/app/api/v1beta/*`: compatibility APIs
+- `src/app/api/v1/providers/[provider]/*`: dedicated per-provider routes (chat, embeddings, images)
 - `src/app/api/providers*`: provider CRUD, validation, testing
 - `src/app/api/provider-nodes*`: custom compatible node management
+- `src/app/api/provider-models`: custom model management (CRUD)
+- `src/app/api/models/catalog`: full model catalog API (all types grouped by provider)
 - `src/app/api/oauth/*`: OAuth/device-code flows
 - `src/app/api/keys*`: local API key lifecycle
 - `src/app/api/models/alias`: alias management
 - `src/app/api/combos*`: fallback combo management
 - `src/app/api/pricing`: pricing overrides for cost calculation
+- `src/app/api/settings/proxy`: proxy configuration (GET/PUT)
 - `src/app/api/usage/*`: usage and logs APIs
 - `src/app/api/sync/*` + `src/app/api/cloud/*`: cloud sync and cloud-facing helpers
 - `src/app/api/cli-tools/*`: local CLI config writers/checkers
@@ -527,18 +548,24 @@ Translations are selected dynamically based on source payload shape and provider
 
 ## Supported API Endpoints
 
-| Endpoint                                      | Format             | Handler                                     |
-| --------------------------------------------- | ------------------ | ------------------------------------------- |
-| `POST /v1/chat/completions`                   | OpenAI Chat        | `src/sse/handlers/chat.js`                  |
-| `POST /v1/messages`                           | Claude Messages    | Same handler (auto-detected)                |
-| `POST /v1/responses`                          | OpenAI Responses   | `open-sse/handlers/responsesHandler.js`     |
-| `POST /v1/embeddings`                         | OpenAI Embeddings  | `open-sse/handlers/embeddings.js`           |
-| `GET /v1/embeddings`                          | Model listing      | API route                                   |
-| `POST /v1/images/generations`                 | OpenAI Images      | `open-sse/handlers/imageGeneration.js`      |
-| `GET /v1/images/generations`                  | Model listing      | API route                                   |
-| `POST /v1/messages/count_tokens`              | Claude Token Count | API route                                   |
-| `GET /v1/models`                              | OpenAI Models list | API route (chat + embedding + image models) |
-| `POST /v1beta/models/*:streamGenerateContent` | Gemini native      | API route                                   |
+| Endpoint                                           | Format             | Handler                                              |
+| -------------------------------------------------- | ------------------ | ---------------------------------------------------- |
+| `POST /v1/chat/completions`                        | OpenAI Chat        | `src/sse/handlers/chat.js`                           |
+| `POST /v1/messages`                                | Claude Messages    | Same handler (auto-detected)                         |
+| `POST /v1/responses`                               | OpenAI Responses   | `open-sse/handlers/responsesHandler.js`              |
+| `POST /v1/embeddings`                              | OpenAI Embeddings  | `open-sse/handlers/embeddings.js`                    |
+| `GET /v1/embeddings`                               | Model listing      | API route                                            |
+| `POST /v1/images/generations`                      | OpenAI Images      | `open-sse/handlers/imageGeneration.js`               |
+| `GET /v1/images/generations`                       | Model listing      | API route                                            |
+| `POST /v1/providers/{provider}/chat/completions`   | OpenAI Chat        | Dedicated per-provider with model validation         |
+| `POST /v1/providers/{provider}/embeddings`         | OpenAI Embeddings  | Dedicated per-provider with model validation         |
+| `POST /v1/providers/{provider}/images/generations` | OpenAI Images      | Dedicated per-provider with model validation         |
+| `POST /v1/messages/count_tokens`                   | Claude Token Count | API route                                            |
+| `GET /v1/models`                                   | OpenAI Models list | API route (chat + embedding + image + custom models) |
+| `GET /api/models/catalog`                          | Catalog            | All models grouped by provider + type                |
+| `POST /v1beta/models/*:streamGenerateContent`      | Gemini native      | API route                                            |
+| `GET/PUT /api/settings/proxy`                      | Proxy Config       | Network proxy configuration                          |
+| `GET/POST/DELETE /api/provider-models`             | Custom Models      | Custom model management per provider                 |
 
 ## Bypass Handler
 

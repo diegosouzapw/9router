@@ -121,18 +121,22 @@ Default URLs:
 
 ## 💡 Key Features
 
-| Feature                         | What It Does                               | Why It Matters                   |
-| ------------------------------- | ------------------------------------------ | -------------------------------- |
-| 🎯 **Smart 3-Tier Fallback**    | Auto-route: Subscription → Cheap → Free    | Never stop coding, zero downtime |
-| 📊 **Real-Time Quota Tracking** | Live token count + reset countdown         | Maximize subscription value      |
-| 🔄 **Format Translation**       | OpenAI ↔ Claude ↔ Gemini seamless          | Works with any CLI tool          |
-| 👥 **Multi-Account Support**    | Multiple accounts per provider             | Load balancing + redundancy      |
-| 🔄 **Auto Token Refresh**       | OAuth tokens refresh automatically         | No manual re-login needed        |
-| 🎨 **Custom Combos**            | Create unlimited model combinations        | Tailor fallback to your needs    |
-| 📝 **Request Logging**          | Debug mode with full request/response logs | Troubleshoot issues easily       |
-| 💾 **Cloud Sync**               | Sync config across devices                 | Same setup everywhere            |
-| 📊 **Usage Analytics**          | Track tokens, cost, trends over time       | Optimize spending                |
-| 🌐 **Deploy Anywhere**          | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options      |
+| Feature                          | What It Does                               | Why It Matters                      |
+| -------------------------------- | ------------------------------------------ | ----------------------------------- |
+| 🎯 **Smart 3-Tier Fallback**     | Auto-route: Subscription → Cheap → Free    | Never stop coding, zero downtime    |
+| 📊 **Real-Time Quota Tracking**  | Live token count + reset countdown         | Maximize subscription value         |
+| 🔄 **Format Translation**        | OpenAI ↔ Claude ↔ Gemini seamless          | Works with any CLI tool             |
+| 👥 **Multi-Account Support**     | Multiple accounts per provider             | Load balancing + redundancy         |
+| 🔄 **Auto Token Refresh**        | OAuth tokens refresh automatically         | No manual re-login needed           |
+| 🎨 **Custom Combos**             | Create unlimited model combinations        | Tailor fallback to your needs       |
+| 🧩 **Custom Models**             | Add any model ID to any provider           | No app update needed for new models |
+| 🛣️ **Dedicated Provider Routes** | Per-provider API endpoints                 | Direct routing, model validation    |
+| 🌐 **Network Proxy**             | Global + per-provider outbound proxy       | Works behind firewalls/VPNs         |
+| 📋 **Model Catalog API**         | All models grouped by provider + type      | Discover available models easily    |
+| 📝 **Request Logging**           | Debug mode with full request/response logs | Troubleshoot issues easily          |
+| 💾 **Cloud Sync**                | Sync config across devices                 | Same setup everywhere               |
+| 📊 **Usage Analytics**           | Track tokens, cost, trends over time       | Optimize spending                   |
+| 🌐 **Deploy Anywhere**           | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options         |
 
 <details>
 <summary><b>📖 Feature Details</b></summary>
@@ -867,6 +871,123 @@ Notes:
 
 - `nvidia/nvidia/llama-3.3-70b-instruct`
 - `nvidia/deepseek/deepseek-r1`
+
+</details>
+
+---
+
+## 🧩 Advanced Features
+
+<details>
+<summary><b>Custom Models</b></summary>
+
+Add any model ID to any provider without waiting for an app update:
+
+```bash
+# Via API
+curl -X POST http://localhost:20128/api/provider-models \
+  -H "Content-Type: application/json" \
+  -d '{"provider": "openai", "modelId": "gpt-4.5-preview", "modelName": "GPT-4.5 Preview"}'
+
+# List custom models
+curl http://localhost:20128/api/provider-models?provider=openai
+
+# Remove
+curl -X DELETE "http://localhost:20128/api/provider-models?provider=openai&model=gpt-4.5-preview"
+```
+
+Or use the Dashboard: **Providers → [Provider] → Custom Models** section.
+
+Custom models appear in `/v1/models` with `custom: true` flag.
+
+</details>
+
+<details>
+<summary><b>Dedicated Provider Routes</b></summary>
+
+Route requests directly to a specific provider with model validation:
+
+```bash
+# Chat completions for a specific provider
+curl -X POST http://localhost:20128/v1/providers/openai/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
+
+# Embeddings for a specific provider
+curl -X POST http://localhost:20128/v1/providers/openai/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{"model": "text-embedding-3-small", "input": "Hello world"}'
+
+# Image generation for a specific provider
+curl -X POST http://localhost:20128/v1/providers/fireworks/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{"model": "flux-1-schnell", "prompt": "A sunset over the ocean"}'
+```
+
+The provider prefix is auto-added if missing. Mismatched models return `400`.
+
+</details>
+
+<details>
+<summary><b>Network Proxy Configuration</b></summary>
+
+Configure outbound proxies globally or per-provider:
+
+```bash
+# Set global proxy
+curl -X PUT http://localhost:20128/api/settings/proxy \
+  -H "Content-Type: application/json" \
+  -d '{"global": "http://proxy.example.com:8080"}'
+
+# Set per-provider proxy
+curl -X PUT http://localhost:20128/api/settings/proxy \
+  -H "Content-Type: application/json" \
+  -d '{"providers": {"openai": "socks5://proxy.example.com:1080"}}'
+
+# Get current config
+curl http://localhost:20128/api/settings/proxy
+```
+
+**Precedence:** Provider-specific → Global → Environment variables (`HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`).
+
+</details>
+
+<details>
+<summary><b>Model Catalog API</b></summary>
+
+Get all available models grouped by provider with type metadata:
+
+```bash
+curl http://localhost:20128/api/models/catalog
+```
+
+Returns:
+
+```json
+{
+  "catalog": {
+    "openai": {
+      "provider": "OpenAI",
+      "active": true,
+      "models": [
+        {
+          "id": "openai/gpt-4o",
+          "name": "GPT-4o",
+          "type": "chat",
+          "custom": false
+        },
+        {
+          "id": "openai/text-embedding-3-small",
+          "type": "embedding",
+          "custom": false
+        }
+      ]
+    }
+  }
+}
+```
+
+Types: `chat`, `embedding`, `image`. Custom models are flagged with `custom: true`.
 
 </details>
 
