@@ -1,7 +1,9 @@
-import { HTTP_STATUS } from "../config/constants.js";
+import { HTTP_STATUS, FETCH_TIMEOUT_MS } from "../config/constants.js";
 
 /**
- * BaseExecutor - Base class for provider executors
+ * BaseExecutor - Base class for provider executors.
+ * Implements the Strategy pattern: subclasses override specific methods
+ * (buildUrl, buildHeaders, transformRequest, etc.) for each provider.
  */
 export class BaseExecutor {
   constructor(provider, config) {
@@ -86,12 +88,21 @@ export class BaseExecutor {
       const transformedBody = this.transformRequest(model, body, stream, credentials);
 
       try {
-        const response = await fetch(url, {
+        // For non-streaming requests, apply a fetch timeout to prevent stalled connections.
+        // Streaming requests skip the timeout — they use stream idle detection instead.
+        const timeoutSignal = !stream ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : null;
+        const combinedSignal = signal && timeoutSignal
+          ? AbortSignal.any([signal, timeoutSignal])
+          : signal || timeoutSignal;
+
+        const fetchOptions = {
           method: "POST",
           headers,
           body: JSON.stringify(transformedBody),
-          signal
-        });
+        };
+        if (combinedSignal) fetchOptions.signal = combinedSignal;
+
+        const response = await fetch(url, fetchOptions);
 
         if (this.shouldRetry(response.status, urlIndex)) {
           log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
@@ -101,6 +112,10 @@ export class BaseExecutor {
 
         return { response, url, headers, transformedBody };
       } catch (error) {
+        // Distinguish timeout errors from other abort errors
+        if (error.name === "TimeoutError") {
+          log?.warn?.("TIMEOUT", `Fetch timeout after ${FETCH_TIMEOUT_MS}ms on ${url}`);
+        }
         lastError = error;
         if (urlIndex + 1 < fallbackCount) {
           log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);

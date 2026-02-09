@@ -1,6 +1,14 @@
 import { loadProviderCredentials } from "./credentialLoader.js";
 
-// Provider configurations (hardcoded values serve as defaults)
+// Timeout for non-streaming fetch requests (ms). Prevents stalled connections.
+export const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || "120000", 10);
+
+// Idle timeout for SSE streams (ms). Closes stream if no data for this duration.
+export const STREAM_IDLE_TIMEOUT_MS = parseInt(process.env.STREAM_IDLE_TIMEOUT_MS || "60000", 10);
+
+// Provider configurations
+// OAuth credentials read from env vars with hardcoded fallbacks for backward compatibility.
+// Use provider-credentials.json or env vars to override in production.
 export const PROVIDERS = {
   claude: {
     baseUrl: "https://api.anthropic.com/v1/messages",
@@ -22,20 +30,20 @@ export const PROVIDERS = {
       "X-Stainless-Timeout": "60"
     },
     // Claude OAuth configuration
-    clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+    clientId: process.env.CLAUDE_OAUTH_CLIENT_ID || "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
     tokenUrl: "https://console.anthropic.com/v1/oauth/token"
   },
   gemini: {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
     format: "gemini",
-    clientId: "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
-    clientSecret: "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"
+    clientId: process.env.GEMINI_OAUTH_CLIENT_ID || "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
+    clientSecret: process.env.GEMINI_OAUTH_CLIENT_SECRET || "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"
   },
   "gemini-cli": {
     baseUrl: "https://cloudcode-pa.googleapis.com/v1internal",
     format: "gemini-cli",
-    clientId: "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
-    clientSecret: "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"
+    clientId: process.env.GEMINI_CLI_OAUTH_CLIENT_ID || process.env.GEMINI_OAUTH_CLIENT_ID || "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
+    clientSecret: process.env.GEMINI_CLI_OAUTH_CLIENT_SECRET || process.env.GEMINI_OAUTH_CLIENT_SECRET || "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"
   },
   codex: {
     baseUrl: "https://chatgpt.com/backend-api/codex/responses",
@@ -46,8 +54,8 @@ export const PROVIDERS = {
       "User-Agent": "codex-cli/0.92.0 (Windows 10.0.26100; x64)"
     },
     // OpenAI OAuth configuration
-    clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
-    clientSecret: "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",
+    clientId: process.env.CODEX_OAUTH_CLIENT_ID || "app_EMoamEEZ73f0CkXaXp7hrann",
+    clientSecret: process.env.CODEX_OAUTH_CLIENT_SECRET || "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",
     tokenUrl: "https://auth.openai.com/oauth/token"
   },
   qwen: {
@@ -58,7 +66,7 @@ export const PROVIDERS = {
       "X-Goog-Api-Client": "gl-node/22.17.0"
     },
     // Qwen OAuth configuration
-    clientId: "f0304373b74a44d2b584a3fb70ca9e56", // From CLIProxyAPI
+    clientId: process.env.QWEN_OAUTH_CLIENT_ID || "f0304373b74a44d2b584a3fb70ca9e56",
     tokenUrl: "https://chat.qwen.ai/api/v1/oauth2/token",
     authUrl: "https://chat.qwen.ai/api/v1/oauth2/device/code"
   },
@@ -68,9 +76,9 @@ export const PROVIDERS = {
     headers: {
       "User-Agent": "iFlow-Cli"
     },
-    // iFlow OAuth configuration (from CLIProxyAPI)
-    clientId: "10009311001",
-    clientSecret: "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW",
+    // iFlow OAuth configuration
+    clientId: process.env.IFLOW_OAUTH_CLIENT_ID || "10009311001",
+    clientSecret: process.env.IFLOW_OAUTH_CLIENT_SECRET || "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW",
     tokenUrl: "https://iflow.cn/oauth/token",
     authUrl: "https://iflow.cn/oauth"
   },
@@ -83,8 +91,8 @@ export const PROVIDERS = {
     headers: {
       "User-Agent": "antigravity/1.104.0 darwin/arm64"
     },
-    clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
-    clientSecret: "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"
+    clientId: process.env.ANTIGRAVITY_OAUTH_CLIENT_ID || "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
+    clientSecret: process.env.ANTIGRAVITY_OAUTH_CLIENT_SECRET || "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"
   },
   openrouter: {
     baseUrl: "https://openrouter.ai/api/v1/chat/completions",

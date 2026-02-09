@@ -50,6 +50,7 @@ source/*
 docs/*
 !docs/ARCHITECTURE.md
 !docs/CODEBASE_DOCUMENTATION.md
+!docs/CONTRIBUTING.md
 test/*
 bin/*
 open-sse/test/*

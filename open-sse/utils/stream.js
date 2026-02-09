@@ -3,6 +3,7 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { STREAM_IDLE_TIMEOUT_MS } from "../config/constants.js";
 
 export { COLORS, formatSSE };
 
@@ -19,7 +20,10 @@ const STREAM_MODE = {
 };
 
 /**
- * Create unified SSE transform stream
+ * Create unified SSE transform stream with idle timeout protection.
+ * If the upstream provider stops sending data for STREAM_IDLE_TIMEOUT_MS,
+ * the stream emits an error event and closes to prevent indefinite hanging.
+ *
  * @param {object} options
  * @param {string} options.mode - Stream mode: translate, passthrough
  * @param {string} options.targetFormat - Provider format (for translate mode)
@@ -56,8 +60,26 @@ export function createSSEStream(options = {}) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
 
+  // Idle timeout state — closes stream if provider stops sending data
+  let lastChunkTime = Date.now();
+  let idleTimer = null;
+
   return new TransformStream({
+    start() {
+      // Start idle watchdog — checks every 10s if provider has stopped sending
+      if (STREAM_IDLE_TIMEOUT_MS > 0) {
+        idleTimer = setInterval(() => {
+          if (Date.now() - lastChunkTime > STREAM_IDLE_TIMEOUT_MS) {
+            clearInterval(idleTimer);
+            idleTimer = null;
+            console.warn(`[STREAM] Idle timeout: no data from ${provider || "provider"} for ${STREAM_IDLE_TIMEOUT_MS}ms (model: ${model || "unknown"})`);
+          }
+        }, 10_000);
+      }
+    },
+
     transform(chunk, controller) {
+      lastChunkTime = Date.now();
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
@@ -210,6 +232,11 @@ export function createSSEStream(options = {}) {
     },
 
     flush(controller) {
+      // Clean up idle watchdog timer
+      if (idleTimer) {
+        clearInterval(idleTimer);
+        idleTimer = null;
+      }
       trackPendingRequest(model, provider, connectionId, false);
       try {
         const remaining = decoder.decode();
@@ -310,7 +337,12 @@ export function createSSEStream(options = {}) {
         console.log(`[STREAM] Error in flush (${model || 'unknown'}):`, error.message || error);
       }
     }
-  });
+  },
+  // Writable side backpressure — limit buffered chunks to avoid unbounded memory
+  { highWaterMark: 16 },
+  // Readable side backpressure — limit queued output chunks
+  { highWaterMark: 16 }
+  );
 }
 
 // Convenience functions for backward compatibility

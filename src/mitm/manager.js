@@ -9,9 +9,13 @@ const { installCert } = require("./cert/install");
 // Store server process
 let serverProcess = null;
 let serverPid = null;
-// Persist across Next.js hot reloads
-function getCachedPassword() { return globalThis.__mitmSudoPassword || null; }
-function setCachedPassword(pwd) { globalThis.__mitmSudoPassword = pwd; }
+
+// Module-scoped password cache (not exposed on globalThis).
+// Cleared automatically when the MITM proxy is stopped.
+let _cachedPassword = null;
+function getCachedPassword() { return _cachedPassword; }
+function setCachedPassword(pwd) { _cachedPassword = pwd || null; }
+function clearCachedPassword() { _cachedPassword = null; }
 
 // server.js is in same directory as this file
 const PID_FILE = path.join(os.homedir(), ".9router", "mitm", ".mitm.pid");
@@ -205,7 +209,8 @@ async function stopMitm(sudoPassword) {
   console.log("Removing DNS entry...");
   await removeDNSEntry(sudoPassword);
   
-  // 3. Remove PID file
+  // 3. Clean up
+  clearCachedPassword(); // Clear password from memory when proxy stops
   try {
     fs.unlinkSync(PID_FILE);
   } catch (error) {
@@ -223,5 +228,6 @@ module.exports = {
   startMitm,
   stopMitm,
   getCachedPassword,
-  setCachedPassword
+  setCachedPassword,
+  clearCachedPassword
 };
