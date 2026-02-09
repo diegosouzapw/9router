@@ -2,9 +2,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import {
   DEFAULT_SAFETY_SETTINGS,
-  extractTextContent,
   tryParseJSON,
-  cleanJSONSchemaForAntigravity
 } from "../helpers/geminiHelper.js";
 import { DEFAULT_THINKING_GEMINI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 
@@ -170,5 +168,7 @@ export function claudeToGeminiRequest(model, body, stream) {
   return result;
 }
 
-// Register as direct path: Claude → Gemini
+// Register as direct path: Claude → Gemini (all Gemini variants)
 register(FORMATS.CLAUDE, FORMATS.GEMINI, claudeToGeminiRequest, null);
+register(FORMATS.CLAUDE, FORMATS.GEMINI_CLI, claudeToGeminiRequest, null);
+register(FORMATS.CLAUDE, FORMATS.ANTIGRAVITY, claudeToGeminiRequest, null);

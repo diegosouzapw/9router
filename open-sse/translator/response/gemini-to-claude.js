@@ -61,8 +61,8 @@ export function geminiToClaudeResponse(chunk, state) {
         continue;
       }
 
-      // Function call → tool_use block
-      if (part.functionCall || (hasThoughtSig && part.functionCall)) {
+      // Function call → tool_use block (with or without thoughtSignature)
+      if (part.functionCall) {
         const fc = part.functionCall;
         const idx = state.contentBlockIndex++;
         const toolId = fc.id || `toolu_${Date.now()}_${idx}`;

@@ -457,7 +457,7 @@ export const REGISTRY = {
 
   "minimax-cn": {
     id: "minimax-cn",
-    alias: "minimax",   // shares alias with minimax
+    alias: "minimax-cn",   // unique alias (was colliding with minimax)
     format: "claude",
     executor: "default",
     baseUrl: "https://api.minimaxi.com/anthropic/v1/messages",
