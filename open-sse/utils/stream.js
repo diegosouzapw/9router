@@ -3,7 +3,7 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
-import { STREAM_IDLE_TIMEOUT_MS } from "../config/constants.js";
+import { STREAM_IDLE_TIMEOUT_MS, HTTP_STATUS } from "../config/constants.js";
 
 export { COLORS, formatSSE };
 
@@ -66,22 +66,36 @@ export function createSSEStream(options = {}) {
   // Idle timeout state — closes stream if provider stops sending data
   let lastChunkTime = Date.now();
   let idleTimer = null;
+  let streamTimedOut = false;
 
   return new TransformStream({
-    start() {
+    start(controller) {
       // Start idle watchdog — checks every 10s if provider has stopped sending
       if (STREAM_IDLE_TIMEOUT_MS > 0) {
         idleTimer = setInterval(() => {
-          if (Date.now() - lastChunkTime > STREAM_IDLE_TIMEOUT_MS) {
+          if (!streamTimedOut && Date.now() - lastChunkTime > STREAM_IDLE_TIMEOUT_MS) {
+            streamTimedOut = true;
             clearInterval(idleTimer);
             idleTimer = null;
-            console.warn(`[STREAM] Idle timeout: no data from ${provider || "provider"} for ${STREAM_IDLE_TIMEOUT_MS}ms (model: ${model || "unknown"})`);
+            const timeoutMsg = `[STREAM] Idle timeout: no data from ${provider || "provider"} for ${STREAM_IDLE_TIMEOUT_MS}ms (model: ${model || "unknown"})`;
+            console.warn(timeoutMsg);
+            trackPendingRequest(model, provider, connectionId, false);
+            appendRequestLog({
+              model,
+              provider,
+              connectionId,
+              status: `FAILED ${HTTP_STATUS.GATEWAY_TIMEOUT}`
+            }).catch(() => {});
+            const timeoutError = new Error(timeoutMsg);
+            timeoutError.name = "StreamIdleTimeoutError";
+            controller.error(timeoutError);
           }
         }, 10_000);
       }
     },
 
     transform(chunk, controller) {
+      if (streamTimedOut) return;
       lastChunkTime = Date.now();
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
@@ -242,6 +256,9 @@ export function createSSEStream(options = {}) {
       if (idleTimer) {
         clearInterval(idleTimer);
         idleTimer = null;
+      }
+      if (streamTimedOut) {
+        return;
       }
       trackPendingRequest(model, provider, connectionId, false);
       try {

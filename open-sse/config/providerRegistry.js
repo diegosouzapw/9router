@@ -468,7 +468,10 @@ export const REGISTRY = {
       "Anthropic-Version": "2023-06-01",
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     },
-    models: [],
+    models: [
+      // Keep parity with minimax to ensure model discovery works for minimax-cn connections.
+      { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
+    ],
   },
 
   deepseek: {

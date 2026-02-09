@@ -8,6 +8,7 @@ import { parseImageModel, getAllImageModels } from "open-sse/config/imageRegistr
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/constants.js";
 import * as log from "@/sse/utils/logger.js";
+import { toJsonErrorPayload } from "@/shared/utils/upstreamError";
 
 /**
  * Handle CORS preflight
@@ -70,8 +71,8 @@ export async function POST(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
-  if (!body.prompt) {
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing prompt");
+  if (typeof body.prompt !== "string" || body.prompt.trim().length === 0) {
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid prompt: expected a non-empty string");
   }
 
   // Parse model to get provider
@@ -95,7 +96,11 @@ export async function POST(request) {
     });
   }
 
-  return new Response(result.error, {
+  const errorPayload = toJsonErrorPayload(
+    result.error,
+    "Image generation provider error"
+  );
+  return new Response(JSON.stringify(errorPayload), {
     status: result.status,
     headers: { "Content-Type": "application/json" }
   });

@@ -70,7 +70,10 @@ export async function handleImageGeneration({ body, credentials, log }) {
   }
 
   if (log) {
-    log.info("IMAGE", `${provider}/${model} | prompt: "${body.prompt?.slice(0, 60)}..." | size: ${body.size || "default"}`);
+    const promptPreview = typeof body.prompt === "string"
+      ? body.prompt.slice(0, 60)
+      : String(body.prompt ?? "").slice(0, 60);
+    log.info("IMAGE", `${provider}/${model} | prompt: "${promptPreview}..." | size: ${body.size || "default"}`);
   }
 
   try {

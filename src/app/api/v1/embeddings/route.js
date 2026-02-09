@@ -8,6 +8,7 @@ import { parseEmbeddingModel, getAllEmbeddingModels } from "open-sse/config/embe
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/constants.js";
 import * as log from "@/sse/utils/logger.js";
+import { toJsonErrorPayload } from "@/shared/utils/upstreamError";
 
 /**
  * Handle CORS preflight
@@ -95,7 +96,11 @@ export async function POST(request) {
     });
   }
 
-  return new Response(result.error, {
+  const errorPayload = toJsonErrorPayload(
+    result.error,
+    "Embedding provider error"
+  );
+  return new Response(JSON.stringify(errorPayload), {
     status: result.status,
     headers: { "Content-Type": "application/json" }
   });

@@ -231,7 +231,6 @@ function estimateTokenCount(text) {
   if (!text || typeof text !== "string") return 0;
 
   // Count CJK ideographs separately — each is roughly 1 token
-  // eslint-disable-next-line no-control-regex
   const cjkMatches = text.match(/[\u3000-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}]/gu);
   const cjkCount = cjkMatches ? cjkMatches.length : 0;
 

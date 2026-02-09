@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
 
@@ -9,7 +9,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   const [showModelModal, setShowModelModal] = useState(false);
   const [modelValue, setModelValue] = useState("");
   const [runtimeStatus, setRuntimeStatus] = useState(null);
-  const [checkingRuntime, setCheckingRuntime] = useState(false);
+  const runtimeFetchStartedRef = useRef(false);
   
   // Initialize state directly with computed value - no need for useEffect
   const [selectedApiKey, setSelectedApiKey] = useState(() => 
@@ -17,15 +17,14 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   );
 
   useEffect(() => {
-    if (isExpanded && !runtimeStatus && !checkingRuntime) {
-      setCheckingRuntime(true);
-      fetch(`/api/cli-tools/runtime/${toolId}`)
-        .then((res) => res.json())
-        .then((data) => setRuntimeStatus(data))
-        .catch((error) => setRuntimeStatus({ error: error?.message || "runtime_check_failed" }))
-        .finally(() => setCheckingRuntime(false));
-    }
-  }, [isExpanded, runtimeStatus, checkingRuntime, toolId]);
+    if (!isExpanded || runtimeStatus || runtimeFetchStartedRef.current) return;
+
+    runtimeFetchStartedRef.current = true;
+    fetch(`/api/cli-tools/runtime/${toolId}`)
+      .then((res) => res.json())
+      .then((data) => setRuntimeStatus(data))
+      .catch((error) => setRuntimeStatus({ error: error?.message || "runtime_check_failed" }));
+  }, [isExpanded, runtimeStatus, toolId]);
 
   const replaceVars = (text) => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
@@ -55,6 +54,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   const hasActiveProviders = activeProviders.length > 0;
+  const checkingRuntime = isExpanded && runtimeStatus === null;
 
   const renderApiKeySelector = () => {
     return (
