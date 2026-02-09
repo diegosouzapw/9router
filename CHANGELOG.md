@@ -17,6 +17,14 @@
 - Enhanced `/v1/models` endpoint to list chat, embedding, and image models with type metadata.
 - Updated `open-sse/index.js` with exports for new handlers, registries, and utilities.
 
+## Frontend
+
+- Added "Available Endpoints" card to the Endpoint page with collapsible sections for Chat Completions (127 models), Embeddings (9 models), and Image Generation (9 models), grouped by provider.
+- Added Nebius AI to `providers.js` with icon, color, and text icon.
+- Generated 11 provider PNG icons (128×128) from SVG for all new providers.
+- Added auto-open of Add Connection modal when a provider detail page has zero connections.
+- Updated Translator debug page with all 28 providers (was missing 12).
+
 # v0.2.72 (2026-02-08)
 
 ## Features

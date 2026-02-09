@@ -123,6 +123,17 @@ export default function ProviderDetailPage() {
     fetchAliases();
   }, [fetchConnections, fetchAliases]);
 
+  // Auto-open Add Connection modal when no connections exist (better UX)
+  useEffect(() => {
+    if (!loading && connections.length === 0 && providerInfo && !isCompatible) {
+      if (isOAuth) {
+        setShowOAuthModal(true);
+      } else {
+        setShowAddApiKeyModal(true);
+      }
+    }
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
     try {

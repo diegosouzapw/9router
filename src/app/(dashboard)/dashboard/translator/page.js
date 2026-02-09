@@ -24,6 +24,18 @@ const PROVIDERS = [
   { value: "kimi", label: "Kimi" },
   { value: "kimi-coding", label: "Kimi Coding" },
   { value: "minimax", label: "MiniMax" },
+  { value: "minimax-cn", label: "MiniMax (China)" },
+  { value: "deepseek", label: "DeepSeek" },
+  { value: "groq", label: "Groq" },
+  { value: "xai", label: "xAI (Grok)" },
+  { value: "mistral", label: "Mistral" },
+  { value: "perplexity", label: "Perplexity" },
+  { value: "together", label: "Together AI" },
+  { value: "fireworks", label: "Fireworks AI" },
+  { value: "cerebras", label: "Cerebras" },
+  { value: "cohere", label: "Cohere" },
+  { value: "nvidia", label: "NVIDIA NIM" },
+  { value: "nebius", label: "Nebius AI" },
 ];
 
 const STEPS = [
