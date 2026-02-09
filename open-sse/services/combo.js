@@ -55,11 +55,23 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
     let errorText = result.statusText || "";
     let retryAfter = null;
     try {
-      const errorBody = await result.clone().json();
-      errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-      retryAfter = errorBody?.retryAfter || null;
+      // Clone once and attempt JSON, fall back to text on the original
+      const cloned = result.clone();
+      try {
+        const errorBody = await cloned.json();
+        errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+        retryAfter = errorBody?.retryAfter || null;
+      } catch {
+        // JSON parse failed — read text from original (not yet consumed)
+        try {
+          const text = await result.text();
+          if (text) errorText = text.substring(0, 500);
+        } catch {
+          // Body already consumed — keep statusText
+        }
+      }
     } catch {
-      // Ignore JSON parse errors
+      // Clone failed — keep statusText as errorText
     }
 
     // Track earliest retryAfter across all combo models
@@ -86,8 +98,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
     log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
   }
 
-  // All models failed
-  const status =  406;
+  // All models failed — use the last actual status code instead of always 406
+  const status = lastStatus || 406;
   const msg = lastError || "All combo models unavailable";
 
   if (earliestRetryAfter) {

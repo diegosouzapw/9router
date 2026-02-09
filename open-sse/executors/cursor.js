@@ -1,3 +1,24 @@
+/**
+ * CursorExecutor — Handles communication with the Cursor IDE API.
+ * 
+ * This executor is the most complex due to Cursor's non-standard protocol:
+ * 
+ * SECTION 1: Authentication (generateChecksum)
+ *   - SHA-256 based checksum using machine ID and timestamp
+ *   - WorkOS token refresh for session management
+ * 
+ * SECTION 2: Request Encoding (transformRequest, buildHeaders)
+ *   - ConnectRPC Protobuf binary encoding via cursorProtobuf.js
+ *   - Chat body construction with model routing
+ * 
+ * SECTION 3: Response Parsing (executeStream, parseEvent*)
+ *   - Binary EventStream → SSE text conversion
+ *   - Gzip decompression of response frames
+ *   - HTTP/2 support with h2 fallback to fetch
+ * 
+ * @see cursorProtobuf.js for Protobuf encoding/decoding utilities
+ */
+
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, HTTP_STATUS } from "../config/constants.js";
 import {
@@ -29,6 +50,7 @@ if (!isCloudEnv()) {
   }
 }
 
+// --- SECTION 1: Authentication Constants ---
 const COMPRESS_FLAG = {
   NONE: 0x00,
   GZIP: 0x01,

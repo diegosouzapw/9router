@@ -2,19 +2,21 @@
  * Usage Fetcher - Get usage data from provider APIs
  */
 
+import { PROVIDERS } from "../config/constants.js";
+
 // GitHub API config
 const GITHUB_CONFIG = {
   apiVersion: "2022-11-28",
   userAgent: "GitHubCopilotChat/0.26.7",
 };
 
-// Antigravity API config (from Quotio)
+// Antigravity API config (credentials from PROVIDERS via credential loader)
 const ANTIGRAVITY_CONFIG = {
   quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
   loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
   tokenUrl: "https://oauth2.googleapis.com/token",
-  clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
-  clientSecret: "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",
+  get clientId() { return PROVIDERS.antigravity.clientId; },
+  get clientSecret() { return PROVIDERS.antigravity.clientSecret; },
   userAgent: "antigravity/1.11.3 Darwin/arm64",
 };
 
@@ -264,7 +266,10 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
         const remainingPercentage = remainingFraction * 100;
         
         // Convert percentage to used/total for UI compatibility
-        const total = 1000; // Normalized base
+        // QUOTA_NORMALIZED_BASE is an arbitrary base for converting fractions
+        // to integer used/total pairs that the dashboard UI can display as bars.
+        const QUOTA_NORMALIZED_BASE = 1000;
+        const total = QUOTA_NORMALIZED_BASE;
         const remaining = Math.round(total * remainingFraction);
         const used = total - remaining;
         

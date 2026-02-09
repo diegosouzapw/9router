@@ -5,8 +5,18 @@ import { SKIP_PATTERNS } from "../config/constants.js";
 import { formatSSE } from "./stream.js";
 
 /**
- * Check for bypass patterns - return fake response without calling provider
- * Only works for Claude CLI requests
+ * Check for bypass patterns — return fake response without calling provider.
+ * 
+ * Intentionally limited to Claude CLI requests only because:
+ * 1. The bypass patterns (title extraction, warmup, count) are specific to
+ *    Claude CLI's internal protocol — other clients don't send these patterns.
+ * 2. False-positive bypasses would silently break real requests.
+ * 3. The SKIP_PATTERNS config allows user-defined patterns for any client.
+ * 
+ * @param {object} body - Request body
+ * @param {string} model - Model name
+ * @param {string} userAgent - User-Agent header
+ * @returns {object|null} Bypass response or null to proceed normally
  */
 export function handleBypassRequest(body, model, userAgent = "") {
   if (!userAgent.includes("claude-cli")) return null;

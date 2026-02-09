@@ -37,12 +37,9 @@ import "./response/openai-responses.js";
 import "./response/kiro-to-openai.js";
 import "./response/cursor-to-openai.js";
 
-// No-op (translators registered at import time)
-function ensureInitialized() {}
 
 // Translate request: source -> openai -> target
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null) {
-  ensureInitialized();
   let result = body;
 
   // Normalize thinking config: remove if lastMessage is not user
@@ -91,7 +88,6 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
 // Translate response chunk: target -> openai -> source
 export function translateResponse(targetFormat, sourceFormat, chunk, state) {
-  ensureInitialized();
   // If same format, return as-is
   if (sourceFormat === targetFormat) {
     return [chunk];
@@ -188,7 +184,5 @@ export function initState(sourceFormat) {
   return base;
 }
 
-// Initialize all translators (kept for backward compatibility)
-export function initTranslators() {
-  ensureInitialized();
-}
+// Initialize all translators (no-op, kept for backward compatibility)
+export function initTranslators() {}

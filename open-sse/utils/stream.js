@@ -277,14 +277,24 @@ export function createSSEStream(options = {}) {
           for (const item of flushed) {
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            controller.enqueue(encoder.encode(output));
           }
         }
+
+        /**
+         * Usage injection strategy:
+         * Usage data (input/output tokens) is injected into the last content chunk
+         * or the finish_reason chunk rather than sent as a separate SSE event.
+         * This ensures all major clients (Claude CLI, Continue, Cursor) receive
+         * usage data even if they stop reading after the finish signal.
+         * The usage buffer (state.usage) accumulates across chunks and is only
+         * emitted once at stream end when merged into the final translated chunk.
+         */
 
         // Send [DONE] and log usage
         const doneOutput = "data: [DONE]\n\n";
         reqLogger?.appendConvertedChunk?.(doneOutput);
-        controller.enqueue(sharedEncoder.encode(doneOutput));
+        controller.enqueue(encoder.encode(doneOutput));
 
         // Estimate usage if provider didn't return valid usage (for translate mode)
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
@@ -297,7 +307,7 @@ export function createSSEStream(options = {}) {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
       } catch (error) {
-        console.log("Error in flush:", error);
+        console.log(`[STREAM] Error in flush (${model || 'unknown'}):`, error.message || error);
       }
     }
   });

@@ -1,17 +1,34 @@
+/**
+ * Stream helper utilities for SSE processing.
+ * 
+ * Thinking Content representations (preserved through translation, not normalized):
+ * - Claude: `content_block_delta` with `delta.thinking` (string)
+ * - OpenAI: `choices[0].delta.reasoning_content` (string)
+ * - Gemini: `candidates[0].content.parts[].thought` (boolean flag + text)
+ * 
+ * Each format's thinking field is mapped to the target format's equivalent
+ * during translation. No normalization is applied because each consumer
+ * expects its native format and normalization would lose format-specific metadata.
+ */
+
 import { FORMATS } from "../translator/formats.js";
 
 // Parse SSE data line
 export function parseSSELine(line) {
-  if (!line || line.charCodeAt(0) !== 100) return null; // 'd' = 100
+  if (!line) return null;
 
-  const data = line.slice(5).trim();
+  // Trim leading whitespace before checking prefix character
+  const trimmed = line.trimStart();
+  if (!trimmed || trimmed.charCodeAt(0) !== 100) return null; // 'd' = 100
+
+  const data = trimmed.slice(5).trim();
   if (data === "[DONE]") return { done: true };
 
   try {
     return JSON.parse(data);
   } catch (error) {
-    if (data.length > 0 && data.length < 1000) {
-      console.log(`[WARN] Failed to parse SSE line (${data.length} chars): ${data.substring(0, 100)}...`);
+    if (data.length > 0) {
+      console.log(`[WARN] Failed to parse SSE line (${data.length} chars): ${data.substring(0, 200)}...`);
     }
     return null;
   }
@@ -42,6 +59,21 @@ export function hasValuableContent(chunk, format) {
     return true;
   }
 
+  // Gemini format: filter chunks with no actual content parts
+  if (format === FORMATS.GEMINI && chunk.candidates?.[0]) {
+    const candidate = chunk.candidates[0];
+    // Keep chunks with finish reason or safety ratings (they signal completion)
+    if (candidate.finishReason) return true;
+    // Filter out chunks where parts array is empty or missing
+    const parts = candidate.content?.parts;
+    if (!parts || parts.length === 0) return false;
+    // Filter out chunks where all parts have empty text
+    const hasContent = parts.some(p => 
+      (p.text && p.text !== "") || p.functionCall || p.executableCode
+    );
+    return hasContent;
+  }
+
   return true; // Other formats: keep all chunks
 }
 
@@ -57,6 +89,15 @@ export function fixInvalidId(parsed) {
   return false;
 }
 
+// Remove null perf_metrics from usage (common across formats)
+function cleanPerfMetrics(data) {
+  if (data?.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
+    const { perf_metrics, ...usageWithoutPerf } = data.usage;
+    return { ...data, usage: usageWithoutPerf };
+  }
+  return data;
+}
+
 // Format output as SSE
 export function formatSSE(data, sourceFormat) {
   if (data === null || data === undefined) return "data: null\n\n";
@@ -67,19 +108,12 @@ export function formatSSE(data, sourceFormat) {
     return `event: ${data.event}\ndata: ${JSON.stringify(data.data)}\n\n`;
   }
 
+  // Clean null perf_metrics before serialization
+  data = cleanPerfMetrics(data);
+
   // Claude format
   if (sourceFormat === FORMATS.CLAUDE && data && data.type) {
-    if (data.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
-      const { perf_metrics, ...usageWithoutPerf } = data.usage;
-      data = { ...data, usage: usageWithoutPerf };
-    }
     return `event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`;
-  }
-
-  // Remove null perf_metrics
-  if (data?.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
-    const { perf_metrics, ...usageWithoutPerf } = data.usage;
-    data = { ...data, usage: usageWithoutPerf };
   }
 
   return `data: ${JSON.stringify(data)}\n\n`;
