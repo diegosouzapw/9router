@@ -8,6 +8,7 @@ import {
   getCliConfigPaths,
   getCliRuntimeStatus,
 } from "@/shared/services/cliRuntime";
+import { createMultiBackup } from "@/shared/services/backupService";
 
 const getCodexConfigPath = () => getCliConfigPaths("codex").config;
 const getCodexAuthPath = () => getCliConfigPaths("codex").auth;
@@ -145,9 +146,13 @@ export async function POST(request) {
 
     const codexDir = getCodexDir();
     const configPath = getCodexConfigPath();
+    const authPath = getCodexAuthPath();
 
     // Ensure directory exists
     await fs.mkdir(codexDir, { recursive: true });
+
+    // Backup current configs before modifying
+    await createMultiBackup("codex", [configPath, authPath]);
 
     // Read and parse existing config
     let parsed = { _root: {}, _sections: {} };
@@ -174,7 +179,6 @@ export async function POST(request) {
     await fs.writeFile(configPath, configContent);
 
     // Update auth.json with OPENAI_API_KEY (Codex reads this first)
-    const authPath = getCodexAuthPath();
     let authData = {};
     try {
       const existingAuth = await fs.readFile(authPath, "utf-8");
@@ -204,6 +208,9 @@ export async function DELETE() {
     }
 
     const configPath = getCodexConfigPath();
+
+    // Backup current configs before resetting
+    await createMultiBackup("codex", [configPath, getCodexAuthPath()]);
 
     // Read and parse existing config
     let parsed = { _root: {}, _sections: {} };

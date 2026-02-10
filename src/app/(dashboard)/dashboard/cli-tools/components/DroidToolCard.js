@@ -28,6 +28,10 @@ export default function DroidToolCard({
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const hasInitializedModel = useRef(false);
+  // Backups state
+  const [backups, setBackups] = useState([]);
+  const [showBackups, setShowBackups] = useState(false);
+  const [restoringBackup, setRestoringBackup] = useState(null);
   const cliReady = !!(droidStatus?.installed && droidStatus?.runnable);
 
   const getConfigStatus = () => {
@@ -52,6 +56,7 @@ export default function DroidToolCard({
     if (isExpanded && !droidStatus) {
       checkDroidStatus();
       fetchModelAliases();
+      fetchBackups();
     }
   }, [isExpanded, droidStatus]);
 
@@ -156,6 +161,41 @@ export default function DroidToolCard({
   const handleModelSelect = (model) => {
     setSelectedModel(model.value);
     setModalOpen(false);
+  };
+
+  // ── Backups ──
+  const fetchBackups = async () => {
+    try {
+      const res = await fetch("/api/cli-tools/backups?tool=droid");
+      const data = await res.json();
+      if (res.ok) setBackups(data.backups || []);
+    } catch (error) {
+      console.log("Error fetching backups:", error);
+    }
+  };
+
+  const handleRestoreBackup = async (backupId) => {
+    setRestoringBackup(backupId);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/cli-tools/backups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: "droid", backupId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: "Backup restored!" });
+        checkDroidStatus();
+        fetchBackups();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to restore" });
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setRestoringBackup(null);
+    }
   };
 
   const getManualConfigs = () => {
@@ -312,7 +352,36 @@ export default function DroidToolCard({
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
                   <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
                 </Button>
+                <div className="flex-1" />
+                <Button variant="ghost" size="sm" onClick={() => { setShowBackups(!showBackups); if (!showBackups) fetchBackups(); }}>
+                  <span className="material-symbols-outlined text-[14px] mr-1">history</span>Backups{backups.length > 0 && ` (${backups.length})`}
+                </Button>
               </div>
+
+              {showBackups && (
+                <div className="mt-2 p-3 bg-surface border border-border rounded-lg">
+                  <h4 className="text-xs font-semibold text-text-main mb-2 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">history</span>
+                    Config Backups
+                  </h4>
+                  {backups.length === 0 ? (
+                    <p className="text-xs text-text-muted">No backups yet. Backups are created automatically before each Apply or Reset.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {backups.map((b) => (
+                        <div key={b.id} className="flex items-center gap-2 px-2 py-1.5 bg-black/5 dark:bg-white/5 rounded text-xs">
+                          <span className="material-symbols-outlined text-[14px] text-text-muted">description</span>
+                          <span className="flex-1 truncate font-mono" title={b.id}>{b.id}</span>
+                          <span className="text-text-muted whitespace-nowrap">{new Date(b.createdAt).toLocaleString()}</span>
+                          <button onClick={() => handleRestoreBackup(b.id)} disabled={restoringBackup === b.id} className="px-2 py-0.5 bg-primary/10 text-primary rounded text-[10px] font-medium hover:bg-primary/20 transition-colors disabled:opacity-50">
+                            {restoringBackup === b.id ? "..." : "Restore"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

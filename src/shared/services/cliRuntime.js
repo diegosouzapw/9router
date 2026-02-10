@@ -58,17 +58,23 @@ const CLI_TOOLS = {
     },
   },
   cline: {
-    defaultCommand: null,
+    defaultCommand: "cline",
     envBinKey: "CLI_CLINE_BIN",
-    requiresBinary: false,
-    healthcheckTimeoutMs: 12000,
-    paths: {},
+    requiresBinary: true,
+    healthcheckTimeoutMs: 4000,
+    paths: {
+      globalState: ".cline/data/globalState.json",
+      secrets: ".cline/data/secrets.json",
+    },
   },
-  roo: {
-    defaultCommand: null,
-    envBinKey: "CLI_ROO_BIN",
-    requiresBinary: false,
-    paths: {},
+  kilo: {
+    defaultCommand: "kilocode",
+    envBinKey: "CLI_KILO_BIN",
+    requiresBinary: true,
+    healthcheckTimeoutMs: 4000,
+    paths: {
+      auth: ".local/share/kilo/auth.json",
+    },
   },
   continue: {
     defaultCommand: null,

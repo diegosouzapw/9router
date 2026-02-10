@@ -8,6 +8,7 @@ import {
   getCliPrimaryConfigPath,
   getCliRuntimeStatus,
 } from "@/shared/services/cliRuntime";
+import { createBackup } from "@/shared/services/backupService";
 
 const getDroidSettingsPath = () => getCliPrimaryConfigPath("droid");
 const getDroidDir = () => path.dirname(getDroidSettingsPath());
@@ -90,6 +91,9 @@ export async function POST(request) {
     // Ensure directory exists
     await fs.mkdir(droidDir, { recursive: true });
 
+    // Backup current settings before modifying
+    await createBackup("droid", settingsPath);
+
     // Read existing settings or create new
     let settings = {};
     try {
@@ -146,6 +150,9 @@ export async function DELETE() {
     }
 
     const settingsPath = getDroidSettingsPath();
+
+    // Backup current settings before resetting
+    await createBackup("droid", settingsPath);
 
     // Read existing settings
     let settings = {};

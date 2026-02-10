@@ -17,6 +17,16 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  // Profiles state
+  const [profiles, setProfiles] = useState([]);
+  const [showProfiles, setShowProfiles] = useState(false);
+  const [newProfileName, setNewProfileName] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [activatingProfile, setActivatingProfile] = useState(null);
+  // Backups state
+  const [backups, setBackups] = useState([]);
+  const [showBackups, setShowBackups] = useState(false);
+  const [restoringBackup, setRestoringBackup] = useState(null);
   const cliReady = !!(codexStatus?.installed && codexStatus?.runnable);
 
   useEffect(() => {
@@ -29,6 +39,8 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     if (isExpanded && !codexStatus) {
       checkCodexStatus();
       fetchModelAliases();
+      fetchProfiles();
+      fetchBackups();
     }
   }, [isExpanded, codexStatus]);
 
@@ -131,6 +143,114 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const handleModelSelect = (model) => {
     setSelectedModel(model.value);
     setModalOpen(false);
+  };
+
+  // ── Profiles ──
+  const fetchProfiles = async () => {
+    try {
+      const res = await fetch("/api/cli-tools/codex-profiles");
+      const data = await res.json();
+      if (res.ok) setProfiles(data.profiles || []);
+    } catch (error) {
+      console.log("Error fetching profiles:", error);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!newProfileName.trim()) return;
+    setSavingProfile(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/cli-tools/codex-profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newProfileName.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: `Profile "${newProfileName}" saved!` });
+        setNewProfileName("");
+        fetchProfiles();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to save profile" });
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleActivateProfile = async (profileId) => {
+    setActivatingProfile(profileId);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/cli-tools/codex-profiles", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: data.message || "Profile activated!" });
+        checkCodexStatus();
+        fetchBackups();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to activate profile" });
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setActivatingProfile(null);
+    }
+  };
+
+  const handleDeleteProfile = async (profileId) => {
+    try {
+      const res = await fetch("/api/cli-tools/codex-profiles", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId }),
+      });
+      if (res.ok) fetchProfiles();
+    } catch (error) {
+      console.log("Error deleting profile:", error);
+    }
+  };
+
+  // ── Backups ──
+  const fetchBackups = async () => {
+    try {
+      const res = await fetch("/api/cli-tools/backups?tool=codex");
+      const data = await res.json();
+      if (res.ok) setBackups(data.backups || []);
+    } catch (error) {
+      console.log("Error fetching backups:", error);
+    }
+  };
+
+  const handleRestoreBackup = async (backupId) => {
+    setRestoringBackup(backupId);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/cli-tools/backups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: "codex", backupId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: "Backup restored!" });
+        checkCodexStatus();
+        fetchBackups();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to restore" });
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setRestoringBackup(null);
+    }
   };
 
   const getManualConfigs = () => {
@@ -311,7 +431,94 @@ wire_api = "responses"
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
                   <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
                 </Button>
+                <div className="flex-1" />
+                <Button variant="ghost" size="sm" onClick={() => { setShowProfiles(!showProfiles); if (!showProfiles) fetchProfiles(); }}>
+                  <span className="material-symbols-outlined text-[14px] mr-1">manage_accounts</span>Profiles
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => { setShowBackups(!showBackups); if (!showBackups) fetchBackups(); }}>
+                  <span className="material-symbols-outlined text-[14px] mr-1">history</span>Backups{backups.length > 0 && ` (${backups.length})`}
+                </Button>
               </div>
+
+              {/* Profiles Section */}
+              {showProfiles && (
+                <div className="mt-2 p-3 bg-surface border border-border rounded-lg">
+                  <h4 className="text-xs font-semibold text-text-main mb-2 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">manage_accounts</span>
+                    Saved Profiles
+                  </h4>
+                  {profiles.length === 0 ? (
+                    <p className="text-xs text-text-muted">No profiles saved yet. Save current config as a profile below.</p>
+                  ) : (
+                    <div className="space-y-1.5 mb-3">
+                      {profiles.map((p) => (
+                        <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 bg-black/5 dark:bg-white/5 rounded text-xs">
+                          <span className="material-symbols-outlined text-[14px] text-text-muted">person</span>
+                          <span className="font-medium flex-1 truncate">{p.name}</span>
+                          <span className="text-text-muted truncate max-w-[140px]" title={p.authLabel}>{p.authLabel}</span>
+                          <button
+                            onClick={() => handleActivateProfile(p.id)}
+                            disabled={activatingProfile === p.id}
+                            className="px-2 py-0.5 bg-primary/10 text-primary rounded text-[10px] font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                          >
+                            {activatingProfile === p.id ? "..." : "Activate"}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteProfile(p.id)}
+                            className="p-0.5 text-text-muted hover:text-red-500 transition-colors"
+                            title="Delete profile"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">delete</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={newProfileName}
+                      onChange={(e) => setNewProfileName(e.target.value)}
+                      placeholder="Profile name (e.g. Personal Account)"
+                      className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                      onKeyDown={(e) => e.key === "Enter" && handleSaveProfile()}
+                    />
+                    <Button variant="primary" size="sm" onClick={handleSaveProfile} disabled={!newProfileName.trim()} loading={savingProfile}>
+                      <span className="material-symbols-outlined text-[14px] mr-1">save</span>Save Current
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Backups Section */}
+              {showBackups && (
+                <div className="mt-2 p-3 bg-surface border border-border rounded-lg">
+                  <h4 className="text-xs font-semibold text-text-main mb-2 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">history</span>
+                    Config Backups
+                  </h4>
+                  {backups.length === 0 ? (
+                    <p className="text-xs text-text-muted">No backups yet. Backups are created automatically before each Apply or Reset.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {backups.map((b) => (
+                        <div key={b.id} className="flex items-center gap-2 px-2 py-1.5 bg-black/5 dark:bg-white/5 rounded text-xs">
+                          <span className="material-symbols-outlined text-[14px] text-text-muted">description</span>
+                          <span className="flex-1 truncate font-mono" title={b.id}>{b.id}</span>
+                          <span className="text-text-muted whitespace-nowrap">{new Date(b.createdAt).toLocaleString()}</span>
+                          <button
+                            onClick={() => handleRestoreBackup(b.id)}
+                            disabled={restoringBackup === b.id}
+                            className="px-2 py-0.5 bg-primary/10 text-primary rounded text-[10px] font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                          >
+                            {restoringBackup === b.id ? "..." : "Restore"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

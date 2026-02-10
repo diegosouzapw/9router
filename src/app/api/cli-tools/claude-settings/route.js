@@ -8,6 +8,7 @@ import {
   getCliPrimaryConfigPath,
   getCliRuntimeStatus,
 } from "@/shared/services/cliRuntime";
+import { createBackup } from "@/shared/services/backupService";
 
 // Get claude settings path based on OS
 const getClaudeSettingsPath = () => getCliPrimaryConfigPath("claude");
@@ -93,6 +94,9 @@ export async function POST(request) {
     // Ensure .claude directory exists
     await fs.mkdir(claudeDir, { recursive: true });
 
+    // Backup current settings before modifying
+    await createBackup("claude", settingsPath);
+
     // Read current settings
     let currentSettings = {};
     try {
@@ -170,6 +174,9 @@ export async function DELETE() {
       }
       throw error;
     }
+
+    // Backup current settings before resetting
+    await createBackup("claude", settingsPath);
 
     // Remove specified env fields
     if (currentSettings.env) {
