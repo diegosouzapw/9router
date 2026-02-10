@@ -48,6 +48,8 @@ function getUserDataDir() {
 const DATA_DIR = getUserDataDir();
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "usage.json");
 const LOG_FILE = isCloud ? null : path.join(DATA_DIR, "log.txt");
+const CALL_LOGS_DB_FILE = isCloud ? null : path.join(DATA_DIR, "call_logs.json");
+const CALL_LOGS_DIR = isCloud ? null : path.join(DATA_DIR, "call_logs");
 
 // Ensure data directory exists
 if (!isCloud && fs && typeof fs.existsSync === "function") {
@@ -510,4 +512,302 @@ export async function getUsageStats() {
   }
 
   return stats;
+}
+
+// ============================================================================
+// Call Logs — Structured JSON logs for the enhanced Logger UI
+// ============================================================================
+
+// In-memory ring buffer for fast reads (last 500 entries)
+let callLogsBuffer = [];
+const CALL_LOGS_MAX = 500;
+
+// Call logs LowDB singleton  
+let callLogsDbInstance = null;
+
+async function getCallLogsDb() {
+  if (isCloud || !CALL_LOGS_DB_FILE) return null;
+  
+  if (!callLogsDbInstance) {
+    const adapter = new JSONFile(CALL_LOGS_DB_FILE);
+    callLogsDbInstance = new Low(adapter, { logs: [] });
+    
+    try {
+      await callLogsDbInstance.read();
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        console.warn('[DB] Corrupt call_logs.json, resetting...');
+        callLogsDbInstance.data = { logs: [] };
+        await callLogsDbInstance.write();
+      } else {
+        throw error;
+      }
+    }
+    
+    if (!callLogsDbInstance.data) {
+      callLogsDbInstance.data = { logs: [] };
+      await callLogsDbInstance.write();
+    }
+    
+    // Seed in-memory buffer from disk
+    callLogsBuffer = (callLogsDbInstance.data.logs || []).slice(-CALL_LOGS_MAX);
+  }
+  return callLogsDbInstance;
+}
+
+// Generate unique ID for each log entry
+let logIdCounter = 0;
+function generateLogId() {
+  logIdCounter++;
+  return `${Date.now()}-${logIdCounter}`;
+}
+
+/**
+ * Save a structured call log entry
+ * @param {object} entry
+ * @param {string} entry.method - HTTP method (POST)
+ * @param {string} entry.path - Request path (/v1/chat/completions)
+ * @param {number} entry.status - HTTP status code (200, 500, etc.)
+ * @param {string} entry.model - Model name
+ * @param {string} entry.provider - Provider ID
+ * @param {string} entry.connectionId - Connection ID
+ * @param {number} entry.duration - Duration in ms
+ * @param {object} entry.tokens - { prompt_tokens, completion_tokens }
+ * @param {object} entry.requestBody - Full request JSON (truncated if too large)
+ * @param {object} entry.responseBody - Full response JSON (truncated if too large)
+ * @param {string} entry.error - Error message if failed
+ * @param {string} entry.sourceFormat - Source format (openai, claude, etc.)
+ * @param {string} entry.targetFormat - Target format
+ */
+export async function saveCallLog(entry) {
+  if (isCloud) return;
+  
+  try {
+    // Resolve account name
+    let account = entry.connectionId ? entry.connectionId.slice(0, 8) : "-";
+    try {
+      const { getProviderConnections } = await import("@/lib/localDb.js");
+      const connections = await getProviderConnections();
+      const conn = connections.find(c => c.id === entry.connectionId);
+      if (conn) {
+        account = conn.name || conn.email || account;
+      }
+    } catch {}
+    
+    // Truncate large payloads for in-memory/DB storage (keep under 8KB each)
+    const truncatePayload = (obj) => {
+      if (!obj) return null;
+      const str = JSON.stringify(obj);
+      if (str.length <= 8192) return obj;
+      try {
+        return { _truncated: true, _originalSize: str.length, _preview: str.slice(0, 8192) + "..." };
+      } catch {
+        return { _truncated: true };
+      }
+    };
+    
+    const logEntry = {
+      id: generateLogId(),
+      timestamp: new Date().toISOString(),
+      method: entry.method || "POST",
+      path: entry.path || "/v1/chat/completions",
+      status: entry.status || 0,
+      model: entry.model || "-",
+      provider: entry.provider || "-",
+      account,
+      connectionId: entry.connectionId || null,
+      duration: entry.duration || 0,
+      tokens: {
+        in: entry.tokens?.prompt_tokens || 0,
+        out: entry.tokens?.completion_tokens || 0,
+      },
+      sourceFormat: entry.sourceFormat || null,
+      targetFormat: entry.targetFormat || null,
+      requestBody: truncatePayload(entry.requestBody),
+      responseBody: truncatePayload(entry.responseBody),
+      error: entry.error || null,
+    };
+    
+    // 1. Add to in-memory buffer
+    callLogsBuffer.push(logEntry);
+    if (callLogsBuffer.length > CALL_LOGS_MAX) {
+      callLogsBuffer = callLogsBuffer.slice(-CALL_LOGS_MAX);
+    }
+    
+    // 2. Persist to LowDB (async, no await to avoid blocking)
+    const persistToDb = async () => {
+      try {
+        const db = await getCallLogsDb();
+        if (!db) return;
+        if (!Array.isArray(db.data.logs)) db.data.logs = [];
+        db.data.logs.push(logEntry);
+        // Keep DB lean — max 500 entries
+        if (db.data.logs.length > CALL_LOGS_MAX) {
+          db.data.logs = db.data.logs.slice(-CALL_LOGS_MAX);
+        }
+        await db.write();
+      } catch (err) {
+        console.error("[callLogs] Failed to persist to DB:", err.message);
+      }
+    };
+    persistToDb();
+    
+    // 3. Write full payload to disk file (untruncated)
+    writeCallLogToDisk(logEntry, entry.requestBody, entry.responseBody);
+    
+  } catch (error) {
+    console.error("[callLogs] Failed to save call log:", error.message);
+  }
+}
+
+/**
+ * Write call log as JSON file to disk (full payloads, not truncated)
+ */
+function writeCallLogToDisk(logEntry, requestBody, responseBody) {
+  if (!CALL_LOGS_DIR) return;
+  
+  try {
+    const now = new Date();
+    const dateFolder = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const dir = path.join(CALL_LOGS_DIR, dateFolder);
+    
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    const safeModel = (logEntry.model || "unknown").replace(/[/:]/g, "-");
+    const time = `${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
+    const filename = `${time}_${safeModel}_${logEntry.status}.json`;
+    
+    const fullEntry = {
+      ...logEntry,
+      requestBody: requestBody || null,
+      responseBody: responseBody || null,
+    };
+    
+    fs.writeFileSync(path.join(dir, filename), JSON.stringify(fullEntry, null, 2));
+  } catch (err) {
+    console.error("[callLogs] Failed to write disk log:", err.message);
+  }
+}
+
+/**
+ * Rotate old call log directories (keep last 7 days)
+ */
+export function rotateCallLogs() {
+  if (!CALL_LOGS_DIR || !fs.existsSync(CALL_LOGS_DIR)) return;
+  
+  try {
+    const entries = fs.readdirSync(CALL_LOGS_DIR);
+    const now = Date.now();
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    
+    for (const entry of entries) {
+      const entryPath = path.join(CALL_LOGS_DIR, entry);
+      const stat = fs.statSync(entryPath);
+      if (stat.isDirectory() && (now - stat.mtimeMs) > sevenDays) {
+        fs.rmSync(entryPath, { recursive: true, force: true });
+        console.log(`[callLogs] Rotated old logs: ${entry}`);
+      }
+    }
+  } catch (err) {
+    console.error("[callLogs] Failed to rotate logs:", err.message);
+  }
+}
+
+// Run rotation on startup
+if (!isCloud) {
+  try { rotateCallLogs(); } catch {}
+}
+
+/**
+ * Get call logs with optional filtering
+ * @param {object} filter
+ * @param {string} filter.status - "error" or "ok" or number
+ * @param {string} filter.model - Model name substring
+ * @param {string} filter.provider - Provider ID
+ * @param {string} filter.account - Account name substring
+ * @param {string} filter.search - Free text search across model, path, account
+ * @param {number} filter.limit - Max entries (default 200)
+ */
+export async function getCallLogs(filter = {}) {
+  // Ensure buffer is seeded from DB if empty
+  if (callLogsBuffer.length === 0) {
+    await getCallLogsDb();
+  }
+  
+  let logs = [...callLogsBuffer];
+  
+  // Apply filters
+  if (filter.status) {
+    if (filter.status === "error") {
+      logs = logs.filter(l => l.status >= 400 || l.error);
+    } else if (filter.status === "ok") {
+      logs = logs.filter(l => l.status >= 200 && l.status < 300);
+    } else {
+      const statusCode = parseInt(filter.status);
+      if (!isNaN(statusCode)) {
+        logs = logs.filter(l => l.status === statusCode);
+      }
+    }
+  }
+  
+  if (filter.model) {
+    const q = filter.model.toLowerCase();
+    logs = logs.filter(l => l.model?.toLowerCase().includes(q));
+  }
+  
+  if (filter.provider) {
+    const q = filter.provider.toLowerCase();
+    logs = logs.filter(l => l.provider?.toLowerCase().includes(q));
+  }
+  
+  if (filter.account) {
+    const q = filter.account.toLowerCase();
+    logs = logs.filter(l => l.account?.toLowerCase().includes(q));
+  }
+  
+  if (filter.search) {
+    const q = filter.search.toLowerCase();
+    logs = logs.filter(l => 
+      l.model?.toLowerCase().includes(q) ||
+      l.path?.toLowerCase().includes(q) ||
+      l.account?.toLowerCase().includes(q) ||
+      l.provider?.toLowerCase().includes(q) ||
+      String(l.status).includes(q)
+    );
+  }
+  
+  const limit = filter.limit || 200;
+  
+  // Return newest first, without large payloads in list view
+  return logs.slice(-limit).reverse().map(l => ({
+    id: l.id,
+    timestamp: l.timestamp,
+    method: l.method,
+    path: l.path,
+    status: l.status,
+    model: l.model,
+    provider: l.provider,
+    account: l.account,
+    duration: l.duration,
+    tokens: l.tokens,
+    sourceFormat: l.sourceFormat,
+    targetFormat: l.targetFormat,
+    error: l.error,
+    hasRequestBody: !!l.requestBody,
+    hasResponseBody: !!l.responseBody,
+  }));
+}
+
+/**
+ * Get a single call log by ID (with full payloads)
+ */
+export async function getCallLogById(id) {
+  // Ensure buffer is seeded
+  if (callLogsBuffer.length === 0) {
+    await getCallLogsDb();
+  }
+  
+  return callLogsBuffer.find(l => l.id === id) || null;
 }

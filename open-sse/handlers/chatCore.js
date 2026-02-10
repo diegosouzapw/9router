@@ -10,7 +10,7 @@ import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerMo
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/constants.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
-import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
+import { saveRequestUsage, trackPendingRequest, appendRequestLog, saveCallLog } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
 import { translateNonStreamingResponse } from "./responseTranslator.js";
 import { extractUsageFromResponse } from "./usageExtractor.js";
@@ -32,6 +32,7 @@ import { parseSSEToOpenAIResponse } from "./sseParser.js";
  */
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent }) {
   const { provider, model } = modelInfo;
+  const startTime = Date.now();
 
   const sourceFormat = detectFormat(body);
 
@@ -158,6 +159,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+    saveCallLog({
+      method: "POST", path: clientRawRequest?.endpoint || "/v1/chat/completions",
+      status: error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY,
+      model, provider, connectionId, duration: Date.now() - startTime,
+      requestBody: body, error: error.message, sourceFormat, targetFormat,
+    }).catch(() => {});
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
@@ -214,6 +221,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     trackPendingRequest(model, provider, connectionId, false);
     const { statusCode, message, retryAfterMs } = await parseUpstreamError(providerResponse, provider);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
+    saveCallLog({
+      method: "POST", path: clientRawRequest?.endpoint || "/v1/chat/completions",
+      status: statusCode, model, provider, connectionId, duration: Date.now() - startTime,
+      requestBody: body, error: message, sourceFormat, targetFormat,
+    }).catch(() => {});
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
 
@@ -256,6 +268,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Log usage for non-streaming responses
     const usage = extractUsageFromResponse(responseBody, provider);
     appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => { });
+
+    // Save structured call log with full payloads
+    saveCallLog({
+      method: "POST",
+      path: clientRawRequest?.endpoint || "/v1/chat/completions",
+      status: 200,
+      model,
+      provider,
+      connectionId,
+      duration: Date.now() - startTime,
+      tokens: usage,
+      requestBody: body,
+      responseBody,
+      sourceFormat,
+      targetFormat,
+    }).catch(() => {});
     if (usage && typeof usage === 'object') {
       const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [USAGE] ${provider.toUpperCase()} | in=${usage?.prompt_tokens || 0} | out=${usage?.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
       console.log(`${COLORS.green}${msg}${COLORS.reset}`);
