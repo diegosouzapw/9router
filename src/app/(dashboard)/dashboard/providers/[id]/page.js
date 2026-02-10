@@ -234,6 +234,23 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleToggleRateLimit = async (connectionId, enabled) => {
+    try {
+      const res = await fetch("/api/rate-limit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId, enabled }),
+      });
+      if (res.ok) {
+        setConnections(prev => prev.map(c =>
+          c.id === connectionId ? { ...c, rateLimitProtection: enabled } : c
+        ));
+      }
+    } catch (error) {
+      console.error("Error toggling rate limit:", error);
+    }
+  };
+
   const handleSwapPriority = async (conn1, conn2) => {
     if (!conn1 || !conn2) return;
     try {
@@ -509,6 +526,7 @@ export default function ProviderDetailPage() {
                 onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
                 onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                onToggleRateLimit={(enabled) => handleToggleRateLimit(conn.id, enabled)}
                 onEdit={() => {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
@@ -1104,7 +1122,7 @@ CooldownTimer.propTypes = {
   until: PropTypes.string.isRequired,
 };
 
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete }) {
+function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onToggleRateLimit, onEdit, onDelete }) {
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
@@ -1138,6 +1156,8 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
     if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
     return "default";
   };
+
+  const rateLimitEnabled = !!connection.rateLimitProtection;
 
   return (
     <div className={`group flex items-center justify-between p-3 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
@@ -1182,6 +1202,18 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {/* Rate Limit Protection toggle */}
+        <button
+          onClick={() => onToggleRateLimit(!rateLimitEnabled)}
+          title={rateLimitEnabled ? "Rate Limit Protection: ON — Click to disable" : "Rate Limit Protection: OFF — Click to enable"}
+          className={`p-1.5 rounded-md transition-all ${
+            rateLimitEnabled
+              ? "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25"
+              : "text-text-muted/40 hover:text-text-muted hover:bg-black/5 dark:hover:bg-white/5"
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">shield</span>
+        </button>
         <Toggle
           size="sm"
           checked={connection.isActive ?? true}
@@ -1208,10 +1240,11 @@ ConnectionRow.propTypes = {
     email: PropTypes.string,
     displayName: PropTypes.string,
     rateLimitedUntil: PropTypes.string,
+    rateLimitProtection: PropTypes.bool,
     testStatus: PropTypes.string,
     isActive: PropTypes.bool,
-    lastError: PropTypes.string,
     priority: PropTypes.number,
+    lastError: PropTypes.string,
     globalPriority: PropTypes.number,
   }).isRequired,
   isOAuth: PropTypes.bool.isRequired,
@@ -1220,6 +1253,7 @@ ConnectionRow.propTypes = {
   onMoveUp: PropTypes.func.isRequired,
   onMoveDown: PropTypes.func.isRequired,
   onToggleActive: PropTypes.func.isRequired,
+  onToggleRateLimit: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
 };

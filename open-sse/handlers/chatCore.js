@@ -15,6 +15,7 @@ import { getExecutor } from "../executors/index.js";
 import { translateNonStreamingResponse } from "./responseTranslator.js";
 import { extractUsageFromResponse } from "./usageExtractor.js";
 import { parseSSEToOpenAIResponse } from "./sseParser.js";
+import { withRateLimit, updateFromHeaders, initializeRateLimits } from "../services/rateLimitManager.js";
 
 
 /**
@@ -33,6 +34,9 @@ import { parseSSEToOpenAIResponse } from "./sseParser.js";
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent }) {
   const { provider, model } = modelInfo;
   const startTime = Date.now();
+
+  // Initialize rate limit settings from persisted DB (once, lazy)
+  await initializeRateLimits();
 
   const sourceFormat = detectFormat(body);
 
@@ -139,14 +143,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let finalBody;
 
   try {
-    const result = await executor.execute({
-      model,
-      body: translatedBody,
-      stream,
-      credentials,
-      signal: streamController.signal,
-      log
-    });
+    const result = await withRateLimit(provider, connectionId, model, () =>
+      executor.execute({
+        model,
+        body: translatedBody,
+        stream,
+        credentials,
+        signal: streamController.signal,
+        log
+      })
+    );
 
     providerResponse = result.response;
     providerUrl = result.url;
@@ -155,6 +161,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     // Log target request (final request to provider)
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+
+    // Update rate limiter from response headers (learn limits dynamically)
+    updateFromHeaders(provider, connectionId, providerResponse.headers, providerResponse.status, model);
 
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false);
@@ -237,6 +246,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     // Log error with full request body for debugging
     reqLogger.logError(new Error(message), finalBody || translatedBody);
+
+    // Update rate limiter from error response headers
+    updateFromHeaders(provider, connectionId, providerResponse.headers, statusCode, model);
 
     return createErrorResult(statusCode, errMsg, retryAfterMs);
   }
