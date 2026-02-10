@@ -31,6 +31,7 @@ export default function ModelSelectModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [combos, setCombos] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
+  const [customModels, setCustomModels] = useState({});
 
   const fetchCombos = async () => {
     try {
@@ -64,6 +65,22 @@ export default function ModelSelectModal({
     if (isOpen) fetchProviderNodes();
   }, [isOpen]);
 
+  const fetchCustomModels = async () => {
+    try {
+      const res = await fetch("/api/provider-models");
+      if (!res.ok) throw new Error(`Failed to fetch custom models: ${res.status}`);
+      const data = await res.json();
+      setCustomModels(data.models || {});
+    } catch (error) {
+      console.error("Error fetching custom models:", error);
+      setCustomModels({});
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) fetchCustomModels();
+  }, [isOpen]);
+
   const allProviders = useMemo(
     () => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...APIKEY_PROVIDERS }),
     []
@@ -93,6 +110,9 @@ export default function ModelSelectModal({
       const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
       
+      // Get user-added custom models for this provider (if any)
+      const providerCustomModels = customModels[providerId] || [];
+
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
@@ -102,8 +122,19 @@ export default function ModelSelectModal({
             value: fullModel,
           }));
         
-        if (aliasModels.length > 0) {
-          // Check for custom name from providerNodes (for compatible providers)
+        // Merge custom models for passthrough providers
+        const customEntries = providerCustomModels
+          .filter(cm => !aliasModels.some(am => am.id === cm.id))
+          .map(cm => ({
+            id: cm.id,
+            name: cm.name || cm.id,
+            value: `${alias}/${cm.id}`,
+            isCustom: true,
+          }));
+        
+        const allModels = [...aliasModels, ...customEntries];
+        
+        if (allModels.length > 0) {
           const matchedNode = providerNodes.find(node => node.id === providerId);
           const displayName = matchedNode?.name || providerInfo.name;
           
@@ -111,16 +142,13 @@ export default function ModelSelectModal({
             name: displayName,
             alias: alias,
             color: providerInfo.color,
-            models: aliasModels,
+            models: allModels,
           };
         }
       } else if (isCustomProvider) {
-        // Match provider node to get custom name
         const matchedNode = providerNodes.find(node => node.id === providerId);
         const displayName = matchedNode?.name || providerInfo.name;
         
-        // Get models from modelAliases using providerId (not prefix)
-        // modelAliases format: { alias: "providerId/modelId" }
         const nodeModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
           .map(([aliasName, fullModel]) => ({
@@ -129,36 +157,62 @@ export default function ModelSelectModal({
             value: fullModel,
           }));
         
-        // Only add to groups if there are models (consistent with other provider types)
-        if (nodeModels.length > 0) {
+        // Merge custom models for custom providers
+        const customEntries = providerCustomModels
+          .filter(cm => !nodeModels.some(nm => nm.id === cm.id))
+          .map(cm => ({
+            id: cm.id,
+            name: cm.name || cm.id,
+            value: `${providerId}/${cm.id}`,
+            isCustom: true,
+          }));
+
+        const allModels = [...nodeModels, ...customEntries];
+        
+        if (allModels.length > 0) {
           groups[providerId] = {
             name: displayName,
             alias: matchedNode?.prefix || providerId,
             color: providerInfo.color,
-            models: nodeModels,
+            models: allModels,
             isCustom: true,
             hasModels: true,
           };
         }
       } else {
-        const models = getModelsByProviderId(providerId);
-        if (models.length > 0) {
+        const systemModels = getModelsByProviderId(providerId);
+        
+        // Merge system models with user-added custom models
+        const systemEntries = systemModels.map((m) => ({
+          id: m.id,
+          name: m.name,
+          value: `${alias}/${m.id}`,
+        }));
+        
+        const customEntries = providerCustomModels
+          .filter(cm => !systemModels.some(sm => sm.id === cm.id))
+          .map(cm => ({
+            id: cm.id,
+            name: cm.name || cm.id,
+            value: `${alias}/${cm.id}`,
+            isCustom: true,
+          }));
+        
+        const allModels = [...systemEntries, ...customEntries];
+        
+        if (allModels.length > 0) {
           groups[providerId] = {
             name: providerInfo.name,
             alias: alias,
             color: providerInfo.color,
-            models: models.map((m) => ({
-              id: m.id,
-              name: m.name,
-              value: `${alias}/${m.id}`,
-            })),
+            models: allModels,
           };
         }
       }
     });
 
     return groups;
-  }, [activeProviders, modelAliases, allProviders, providerNodes]);
+  }, [activeProviders, modelAliases, allProviders, providerNodes, customModels]);
 
   // Filter combos by search query
   const filteredCombos = useMemo(() => {
@@ -292,7 +346,7 @@ export default function ModelSelectModal({
                       }
                     `}
                   >
-                    {model.name}
+                    {model.name}{model.isCustom ? " ★" : ""}
                   </button>
                 );
               })}
