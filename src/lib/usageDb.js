@@ -295,7 +295,7 @@ export async function getRecentLogs(limit = 200) {
  * @param {object} tokens - Token counts
  * @returns {number} Cost in dollars
  */
-async function calculateCost(provider, model, tokens) {
+export async function calculateCost(provider, model, tokens) {
   if (!tokens || !provider || !model) return 0;
 
   try {
