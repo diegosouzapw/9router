@@ -2,15 +2,67 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
-import ProviderLimitCard from "./ProviderLimitCard";
-import QuotaTable from "./QuotaTable";
 import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
-import Button from "@/shared/components/Button";
 import { CardSkeleton } from "@/shared/components/Loading";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
-const REFRESH_INTERVAL_MS = 60000; // 60 seconds
+const REFRESH_INTERVAL_MS = 60000;
+
+// Provider display config
+const PROVIDER_CONFIG = {
+  antigravity: { label: "Antigravity", color: "#F59E0B" },
+  github: { label: "GitHub Copilot", color: "#333" },
+  kiro: { label: "Kiro AI", color: "#FF6B35" },
+  codex: { label: "OpenAI Codex", color: "#10A37F" },
+  claude: { label: "Claude Code", color: "#D97757" },
+};
+
+// Short model display names for quota bars
+function getShortModelName(name) {
+  const map = {
+    "gemini-3-pro-high": "G3 Pro",
+    "gemini-3-pro-low": "G3 Pro Low",
+    "gemini-3-flash": "G3 Flash",
+    "gemini-2.5-flash": "G2.5 Flash",
+    "claude-opus-4-6-thinking": "Opus 4.6 Tk",
+    "claude-opus-4-5-thinking": "Opus 4.5 Tk",
+    "claude-opus-4-5": "Opus 4.5",
+    "claude-sonnet-4-5-thinking": "Sonnet 4.5 Tk",
+    "claude-sonnet-4-5": "Sonnet 4.5",
+    chat: "Chat",
+    completions: "Completions",
+    premium_interactions: "Premium",
+    session: "Session",
+    weekly: "Weekly",
+    agentic_request: "Agentic",
+    agentic_request_freetrial: "Agentic (Trial)",
+  };
+  return map[name] || name;
+}
+
+// Get bar color based on remaining percentage
+function getBarColor(remaining) {
+  if (remaining > 70) return { bar: "#22c55e", text: "#22c55e", bg: "rgba(34,197,94,0.12)" };
+  if (remaining >= 30) return { bar: "#eab308", text: "#eab308", bg: "rgba(234,179,8,0.12)" };
+  return { bar: "#ef4444", text: "#ef4444", bg: "rgba(239,68,68,0.12)" };
+}
+
+// Format countdown
+function formatCountdown(resetAt) {
+  if (!resetAt) return null;
+  try {
+    const diff = new Date(resetAt) - new Date();
+    if (diff <= 0) return null;
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    if (h >= 24) {
+      const d = Math.floor(h / 24);
+      return `${d}d ${h % 24}h`;
+    }
+    return `${h}h ${m}m`;
+  } catch { return null; }
+}
 
 export default function ProviderLimits() {
   const [connections, setConnections] = useState([]);
@@ -26,65 +78,40 @@ export default function ProviderLimits() {
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
 
-  // Fetch all provider connections
   const fetchConnections = useCallback(async () => {
     try {
       const response = await fetch("/api/providers/client");
-      if (!response.ok) throw new Error("Failed to fetch connections");
-      
+      if (!response.ok) throw new Error("Failed");
       const data = await response.json();
-      const connectionList = data.connections || [];
-      setConnections(connectionList);
-      return connectionList;
-    } catch (error) {
-      console.error("Error fetching connections:", error);
+      const list = data.connections || [];
+      setConnections(list);
+      return list;
+    } catch {
       setConnections([]);
       return [];
     }
   }, []);
 
-  // Fetch quota for a specific connection
   const fetchQuota = useCallback(async (connectionId, provider) => {
     setLoading((prev) => ({ ...prev, [connectionId]: true }));
     setErrors((prev) => ({ ...prev, [connectionId]: null }));
-
     try {
-      console.log(`[ProviderLimits] Fetching quota for ${provider} (${connectionId})`);
       const response = await fetch(`/api/usage/${connectionId}`);
-      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const errorMsg = errorData.error || response.statusText;
-        
-        // Handle different error types gracefully
-        if (response.status === 404) {
-          // Connection not found - skip silently
-          console.warn(`[ProviderLimits] Connection not found for ${provider}, skipping`);
-          return;
-        }
-        
+        if (response.status === 404) return;
         if (response.status === 401) {
-          // Auth error - show message instead of throwing
-          console.warn(`[ProviderLimits] Auth error for ${provider}:`, errorMsg);
           setQuotaData((prev) => ({
             ...prev,
-            [connectionId]: {
-              quotas: [],
-              message: errorMsg,
-            },
+            [connectionId]: { quotas: [], message: errorMsg },
           }));
           return;
         }
-        
         throw new Error(`HTTP ${response.status}: ${errorMsg}`);
       }
-
       const data = await response.json();
-      console.log(`[ProviderLimits] Got quota for ${provider}:`, data);
-      
-      // Parse quota data using provider-specific parser
       const parsedQuotas = parseQuotaData(provider, data);
-      
       setQuotaData((prev) => ({
         ...prev,
         [connectionId]: {
@@ -95,7 +122,6 @@ export default function ProviderLimits() {
         },
       }));
     } catch (error) {
-      console.error(`[ProviderLimits] Error fetching quota for ${provider} (${connectionId}):`, error);
       setErrors((prev) => ({
         ...prev,
         [connectionId]: error.message || "Failed to fetch quota",
@@ -105,7 +131,6 @@ export default function ProviderLimits() {
     }
   }, []);
 
-  // Refresh quota for a specific provider
   const refreshProvider = useCallback(
     async (connectionId, provider) => {
       await fetchQuota(connectionId, provider);
@@ -114,189 +139,92 @@ export default function ProviderLimits() {
     [fetchQuota]
   );
 
-  // Refresh all providers
   const refreshAll = useCallback(async () => {
     if (refreshingAll) return;
-
     setRefreshingAll(true);
     setCountdown(60);
-
     try {
       const conns = await fetchConnections();
-      
-      // Filter only supported OAuth providers
       const oauthConnections = conns.filter(
         (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
       );
-      
-      // Fetch quota for supported OAuth connections only
-      await Promise.all(
-        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider))
-      );
-
+      await Promise.all(oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)));
       setLastUpdated(new Date());
     } catch (error) {
-      console.error("Error refreshing all providers:", error);
+      console.error("Error refreshing all:", error);
     } finally {
       setRefreshingAll(false);
     }
   }, [refreshingAll, fetchConnections, fetchQuota]);
 
-  // Initial load
   useEffect(() => {
-    const initializeData = async () => {
+    const init = async () => {
       setInitialLoading(true);
       await refreshAll();
       setInitialLoading(false);
     };
-
-    initializeData();
+    init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh interval
   useEffect(() => {
     if (!autoRefresh) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current);
-        countdownRef.current = null;
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
       return;
     }
-
-    // Main refresh interval
-    intervalRef.current = setInterval(() => {
-      refreshAll();
-    }, REFRESH_INTERVAL_MS);
-
-    // Countdown interval
+    intervalRef.current = setInterval(refreshAll, REFRESH_INTERVAL_MS);
     countdownRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) return 60;
-        return prev - 1;
-      });
+      setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
     }, 1000);
-
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, [autoRefresh, refreshAll]);
 
-  // Pause auto-refresh when tab is hidden (Page Visibility API)
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handler = () => {
       if (document.hidden) {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-        }
-        if (countdownRef.current) {
-          clearInterval(countdownRef.current);
-          countdownRef.current = null;
-        }
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        if (countdownRef.current) clearInterval(countdownRef.current);
       } else if (autoRefresh) {
-        // Resume auto-refresh when tab becomes visible
         intervalRef.current = setInterval(refreshAll, REFRESH_INTERVAL_MS);
         countdownRef.current = setInterval(() => {
           setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
         }, 1000);
       }
     };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
   }, [autoRefresh, refreshAll]);
 
-  // Format last updated time
-  const formatLastUpdated = useCallback(() => {
-    if (!lastUpdated) return "Never";
-
-    const now = new Date();
-    const diffMs = now - lastUpdated;
-    const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMinutes / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffDays > 0) return `${diffDays}d ago`;
-    if (diffHours > 0) return `${diffHours}h ago`;
-    if (diffMinutes > 0) return `${diffMinutes}m ago`;
-    return "Just now";
-  }, [lastUpdated]);
-
-  // Filter only supported providers
-  const filteredConnections = connections.filter((conn) =>
-    USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+  const filteredConnections = connections.filter(
+    (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
   );
 
-  // Sort providers: antigravity first, then kiro, then others alphabetically
   const sortedConnections = [...filteredConnections].sort((a, b) => {
-    const getProviderPriority = (provider) => {
-      if (provider === "antigravity") return 1;
-      if (provider === "kiro") return 2;
-      return 3;
-    };
-
-    const priorityA = getProviderPriority(a.provider);
-    const priorityB = getProviderPriority(b.provider);
-
-    if (priorityA !== priorityB) {
-      return priorityA - priorityB;
-    }
-
-    // Same priority: sort alphabetically
-    return a.provider.localeCompare(b.provider);
+    const priority = { antigravity: 1, github: 2, codex: 3, claude: 4, kiro: 5 };
+    return (priority[a.provider] || 9) - (priority[b.provider] || 9);
   });
 
-  // Calculate summary stats
-  const totalProviders = sortedConnections.length;
-  const activeWithLimits = Object.values(quotaData).filter(
-    (data) => data?.quotas?.length > 0
-  ).length;
-  
-  // Count low quotas (remaining < 30%)
-  const lowQuotasCount = Object.values(quotaData).reduce((count, data) => {
-    if (!data?.quotas) return count;
-    
-    const hasLowQuota = data.quotas.some((quota) => {
-      const percentage = calculatePercentage(quota.used, quota.total);
-      return percentage < 30 && quota.total > 0;
-    });
-    
-    return count + (hasLowQuota ? 1 : 0);
-  }, 0);
-
-  // Initial loading state
   if (initialLoading) {
     return (
-      <div className="space-y-4">
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <CardSkeleton />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
+        <CardSkeleton />
       </div>
     );
   }
 
-  // Empty state
   if (sortedConnections.length === 0) {
     return (
       <Card padding="lg">
-        <div className="text-center py-12">
-          <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
-            cloud_off
-          </span>
-          <h3 className="mt-4 text-lg font-semibold text-text-primary">
+        <div style={{ textAlign: "center", padding: "48px 0" }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 64, opacity: 0.15 }}>cloud_off</span>
+          <h3 style={{ marginTop: 16, fontSize: 18, fontWeight: 600, color: "var(--text-primary)" }}>
             No Providers Connected
           </h3>
-          <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
+          <p style={{ marginTop: 8, fontSize: 14, color: "var(--text-muted)", maxWidth: 400, margin: "8px auto 0" }}>
             Connect to providers with OAuth to track your API quota limits and usage.
           </p>
         </div>
@@ -305,121 +233,253 @@ export default function ProviderLimits() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header Controls */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-text-primary">
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
             Provider Limits
           </h2>
-          <span className="text-sm text-text-muted">
-            Last updated: {formatLastUpdated()}
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            {sortedConnections.length} account{sortedConnections.length !== 1 ? "s" : ""}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Auto-refresh toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button
-            onClick={() => setAutoRefresh((prev) => !prev)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-            title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"}
+            onClick={() => setAutoRefresh((p) => !p)}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 12px", borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.08)",
+              background: "transparent", cursor: "pointer",
+              color: "var(--text-primary)", fontSize: 13,
+            }}
           >
-            <span
-              className={`material-symbols-outlined text-[18px] ${
-                autoRefresh ? "text-primary" : "text-text-muted"
-              }`}
-            >
+            <span className="material-symbols-outlined" style={{
+              fontSize: 18,
+              color: autoRefresh ? "#22c55e" : "var(--text-muted)",
+            }}>
               {autoRefresh ? "toggle_on" : "toggle_off"}
             </span>
-            <span className="text-sm text-text-primary">Auto-refresh</span>
+            Auto-refresh
             {autoRefresh && (
-              <span className="text-xs text-text-muted">({countdown}s)</span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>({countdown}s)</span>
             )}
           </button>
 
-          {/* Refresh all button */}
-          <Button
-            variant="secondary"
-            size="md"
-            icon="refresh"
+          <button
             onClick={refreshAll}
             disabled={refreshingAll}
-            loading={refreshingAll}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 8,
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              cursor: refreshingAll ? "not-allowed" : "pointer",
+              opacity: refreshingAll ? 0.5 : 1,
+              color: "var(--text-primary)", fontSize: 13,
+            }}
           >
+            <span className={`material-symbols-outlined ${refreshingAll ? "animate-spin" : ""}`}
+              style={{ fontSize: 16 }}>refresh</span>
             Refresh All
-          </Button>
+          </button>
         </div>
       </div>
 
-      {/* Provider Cards Grid */}
-      <div className="flex flex-col gap-4">
-        {sortedConnections.map((conn) => {
+      {/* Account rows */}
+      <div style={{
+        borderRadius: 12,
+        border: "1px solid rgba(255,255,255,0.06)",
+        overflow: "hidden",
+        background: "rgba(0,0,0,0.15)",
+      }}>
+        {/* Table header */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "280px 1fr 100px 48px",
+          alignItems: "center",
+          padding: "10px 16px",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          color: "var(--text-muted)",
+        }}>
+          <div>Account</div>
+          <div>Model Quotas</div>
+          <div style={{ textAlign: "center" }}>Last Used</div>
+          <div style={{ textAlign: "center" }}>Actions</div>
+        </div>
+
+        {sortedConnections.map((conn, idx) => {
           const quota = quotaData[conn.id];
           const isLoading = loading[conn.id];
           const error = errors[conn.id];
+          const config = PROVIDER_CONFIG[conn.provider] || { label: conn.provider, color: "#666" };
 
-          // Use table layout for all providers
           return (
-            <Card key={conn.id} padding="none">
-              <div className="p-6 border-b border-black/10 dark:border-white/10">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden">
-                      <Image
-                        src={`/providers/${conn.provider}.png`}
-                        alt={conn.provider}
-                        width={40}
-                        height={40}
-                        className="object-contain"
-                        sizes="40px"
-                      />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-text-primary capitalize">
-                        {conn.provider}
-                      </h3>
-                      {conn.name && (
-                        <p className="text-sm text-text-muted">{conn.name}</p>
-                      )}
-                    </div>
+            <div
+              key={conn.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "280px 1fr 100px 48px",
+                alignItems: "center",
+                padding: "14px 16px",
+                borderBottom: idx < sortedConnections.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                transition: "background 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
+              {/* Account Info */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  overflow: "hidden", flexShrink: 0,
+                }}>
+                  <Image
+                    src={`/providers/${conn.provider}.png`}
+                    alt={conn.provider}
+                    width={32} height={32}
+                    className="object-contain"
+                    sizes="32px"
+                  />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 13, fontWeight: 600, color: "var(--text-primary)",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    {conn.name || config.label}
                   </div>
-                  
-                  <button
-                    onClick={() => refreshProvider(conn.id, conn.provider)}
-                    disabled={isLoading}
-                    className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
-                    title="Refresh quota"
-                  >
-                    <span className={`material-symbols-outlined text-[20px] text-text-muted ${isLoading ? "animate-spin" : ""}`}>
-                      refresh
-                    </span>
-                  </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                    {quota?.plan && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+                        padding: "1px 6px", borderRadius: 4,
+                        background: config.color + "33",
+                        color: config.color,
+                        letterSpacing: "0.03em",
+                      }}>
+                        {quota.plan}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="p-6">
+              {/* Quota Bars */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px", paddingRight: 12 }}>
                 {isLoading ? (
-                  <div className="text-center py-8 text-text-muted">
-                    <span className="material-symbols-outlined text-[32px] animate-spin">
-                      progress_activity
-                    </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-muted)", fontSize: 12 }}>
+                    <span className="material-symbols-outlined animate-spin" style={{ fontSize: 14 }}>progress_activity</span>
+                    Loading...
                   </div>
                 ) : error ? (
-                  <div className="text-center py-8">
-                    <span className="material-symbols-outlined text-[32px] text-red-500">
-                      error
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#ef4444" }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>error</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }}>
+                      {error}
                     </span>
-                    <p className="mt-2 text-sm text-text-muted">{error}</p>
                   </div>
-                ) : quota?.message ? (
-                  <div className="text-center py-8">
-                    <p className="text-sm text-text-muted">{quota.message}</p>
+                ) : quota?.message && (!quota.quotas || quota.quotas.length === 0) ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                    {quota.message}
                   </div>
+                ) : quota?.quotas?.length > 0 ? (
+                  quota.quotas.map((q, i) => {
+                    const remaining = q.remainingPercentage !== undefined
+                      ? Math.round(q.remainingPercentage)
+                      : calculatePercentage(q.used, q.total);
+                    const colors = getBarColor(remaining);
+                    const cd = formatCountdown(q.resetAt);
+                    const shortName = getShortModelName(q.name);
+
+                    return (
+                      <div key={i} style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        minWidth: 200, flex: "0 0 auto",
+                      }}>
+                        {/* Model label */}
+                        <span style={{
+                          fontSize: 11, fontWeight: 600,
+                          padding: "2px 8px", borderRadius: 4,
+                          background: colors.bg, color: colors.text,
+                          whiteSpace: "nowrap", minWidth: 60, textAlign: "center",
+                        }}>
+                          {shortName}
+                        </span>
+
+                        {/* Countdown */}
+                        {cd && (
+                          <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                            ⏱ {cd}
+                          </span>
+                        )}
+
+                        {/* Progress bar */}
+                        <div style={{
+                          flex: 1, height: 6, borderRadius: 3,
+                          background: "rgba(255,255,255,0.06)",
+                          minWidth: 60, overflow: "hidden",
+                        }}>
+                          <div style={{
+                            height: "100%", borderRadius: 3,
+                            width: `${Math.min(remaining, 100)}%`,
+                            background: colors.bar,
+                            transition: "width 0.3s ease",
+                          }} />
+                        </div>
+
+                        {/* Percentage */}
+                        <span style={{
+                          fontSize: 11, fontWeight: 600,
+                          color: colors.text, minWidth: 32, textAlign: "right",
+                        }}>
+                          {remaining}%
+                        </span>
+                      </div>
+                    );
+                  })
                 ) : (
-                  <QuotaTable quotas={quota?.quotas} />
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                    No quota data
+                  </div>
                 )}
               </div>
-            </Card>
+
+              {/* Last Used */}
+              <div style={{ textAlign: "center", fontSize: 11, color: "var(--text-muted)" }}>
+                {lastUpdated ? (
+                  <span>{lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                ) : "-"}
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: "flex", justifyContent: "center", gap: 2 }}>
+                <button
+                  onClick={() => refreshProvider(conn.id, conn.provider)}
+                  disabled={isLoading}
+                  title="Refresh quota"
+                  style={{
+                    padding: 4, borderRadius: 6, border: "none",
+                    background: "transparent", cursor: isLoading ? "not-allowed" : "pointer",
+                    opacity: isLoading ? 0.3 : 0.6,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    transition: "opacity 0.15s",
+                  }}
+                  onMouseEnter={(e) => { if (!isLoading) e.currentTarget.style.opacity = "1"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.opacity = isLoading ? "0.3" : "0.6"; }}
+                >
+                  <span className={`material-symbols-outlined ${isLoading ? "animate-spin" : ""}`}
+                    style={{ fontSize: 16, color: "var(--text-muted)" }}>refresh</span>
+                </button>
+              </div>
+            </div>
           );
         })}
       </div>
