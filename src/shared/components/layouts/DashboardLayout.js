@@ -1,11 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Sidebar from "../Sidebar";
 import Header from "../Header";
 
+const SIDEBAR_COLLAPSED_KEY = "sidebar-collapsed";
+
 export default function DashboardLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Load collapsed state from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    if (saved === "true") setCollapsed(true);
+  }, []);
+
+  const handleToggleCollapse = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+  };
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg">
@@ -19,7 +34,7 @@ export default function DashboardLayout({ children }) {
 
       {/* Sidebar - Desktop */}
       <div className="hidden lg:flex">
-        <Sidebar />
+        <Sidebar collapsed={collapsed} onToggleCollapse={handleToggleCollapse} />
       </div>
 
       {/* Sidebar - Mobile */}

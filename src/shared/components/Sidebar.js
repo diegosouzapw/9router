@@ -26,10 +26,12 @@ const systemItems = [
   { href: "/dashboard/profile", label: "Settings", icon: "settings" },
 ];
 
-export default function Sidebar({ onClose }) {
+export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }) {
   const pathname = usePathname();
   const [showShutdownModal, setShowShutdownModal] = useState(false);
+  const [showRestartModal, setShowRestartModal] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
 
@@ -60,144 +62,153 @@ export default function Sidebar({ onClose }) {
     setIsDisconnected(true);
   };
 
+  const handleRestart = async () => {
+    setIsRestarting(true);
+    try {
+      await fetch("/api/restart", { method: "POST" });
+    } catch (e) {
+      // Expected to fail as server restarts
+    }
+    setIsRestarting(false);
+    setShowRestartModal(false);
+    // Show reconnecting state, then try to reload after a delay
+    setIsDisconnected(true);
+    setTimeout(() => {
+      globalThis.location.reload();
+    }, 3000);
+  };
+
+  const renderNavLink = (item) => (
+    <Link
+      key={item.href}
+      href={item.href}
+      onClick={onClose}
+      title={collapsed ? item.label : undefined}
+      className={cn(
+        "flex items-center gap-3 rounded-lg transition-all group",
+        collapsed ? "justify-center px-2 py-2.5" : "px-4 py-2",
+        isActive(item.href)
+          ? "bg-primary/10 text-primary"
+          : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+      )}
+    >
+      <span
+        className={cn(
+          "material-symbols-outlined text-[18px]",
+          isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+        )}
+      >
+        {item.icon}
+      </span>
+      {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
+    </Link>
+  );
+
   return (
     <>
-      <aside className="flex w-72 flex-col border-r border-black/5 dark:border-white/5 bg-vibrancy backdrop-blur-xl transition-colors duration-300">
-        {/* Traffic lights */}
-        <div className="flex items-center gap-2 px-6 pt-5 pb-2">
+      <aside
+        className={cn(
+          "flex flex-col border-r border-black/5 dark:border-white/5 bg-vibrancy backdrop-blur-xl transition-all duration-300 ease-in-out",
+          collapsed ? "w-16" : "w-72"
+        )}
+      >
+        {/* Traffic lights + collapse toggle */}
+        <div className={cn("flex items-center gap-2 pt-5 pb-2", collapsed ? "px-3 justify-center" : "px-6")}>
           <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
           <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
           <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
+          {!collapsed && <div className="flex-1" />}
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className={cn(
+                "p-1 rounded-md text-text-muted/50 hover:text-text-muted hover:bg-black/5 dark:hover:bg-white/5 transition-colors",
+                collapsed && "mt-2"
+              )}
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {collapsed ? "chevron_right" : "chevron_left"}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Logo */}
-        <div className="px-6 py-4">
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex items-center justify-center size-9 rounded bg-linear-to-br from-[#f97815] to-[#c2590a]">
+        <div className={cn("py-4", collapsed ? "px-2" : "px-6")}>
+          <Link href="/dashboard" className={cn("flex items-center", collapsed ? "justify-center" : "gap-3")}>
+            <div className="flex items-center justify-center size-9 rounded bg-linear-to-br from-[#f97815] to-[#c2590a] shrink-0">
               <span className="material-symbols-outlined text-white text-[20px]">hub</span>
             </div>
-            <div className="flex flex-col">
-              <h1 className="text-lg font-semibold tracking-tight text-text-main">
-                {APP_CONFIG.name}
-              </h1>
-              <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
-            </div>
+            {!collapsed && (
+              <div className="flex flex-col">
+                <h1 className="text-lg font-semibold tracking-tight text-text-main">
+                  {APP_CONFIG.name}
+                </h1>
+                <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
+              </div>
+            )}
           </Link>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
-                isActive(item.href)
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface/50 hover:text-text-main"
-              )}
-            >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                )}
-              >
-                {item.icon}
-              </span>
-              <span className="text-sm font-medium">{item.label}</span>
-            </Link>
-          ))}
+        <nav className={cn("flex-1 py-2 space-y-1 overflow-y-auto custom-scrollbar", collapsed ? "px-2" : "px-4")}>
+          {navItems.map(renderNavLink)}
 
-          {/* Debug section (only show when ENABLE_REQUEST_LOGS=true) */}
+          {/* Debug section */}
           {showDebug && (
             <div className="pt-4 mt-2">
-              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-                Debug
-              </p>
-              {debugItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
-                    isActive(item.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface/50 hover:text-text-main"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span className="text-sm font-medium">{item.label}</span>
-                </Link>
-              ))}
+              {!collapsed && (
+                <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+                  Debug
+                </p>
+              )}
+              {collapsed && <div className="border-t border-black/5 dark:border-white/5 mb-2" />}
+              {debugItems.map(renderNavLink)}
             </div>
           )}
 
           {/* System section */}
           <div className="pt-4 mt-2">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              System
-            </p>
-            {systemItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
-                  isActive(item.href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface/50 hover:text-text-main"
-                )}
-              >
-                <span
-                  className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                  )}
-                >
-                  {item.icon}
-                </span>
-                <span className="text-sm font-medium">{item.label}</span>
-              </Link>
-            ))}
+            {!collapsed && (
+              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+                System
+              </p>
+            )}
+            {collapsed && <div className="border-t border-black/5 dark:border-white/5 mb-2" />}
+            {systemItems.map(renderNavLink)}
           </div>
         </nav>
 
-        {/* Footer section */}
-        <div className="p-3 border-t border-black/5 dark:border-white/5">
-          {/* Info message */}
-          <div className="flex items-start gap-2 p-2 rounded-lg bg-surface/50 mb-2">
-            <div className="flex items-center justify-center size-6 rounded-md bg-blue-500/10 text-blue-500 shrink-0 mt-0.5">
-              <span className="material-symbols-outlined text-[14px]">info</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-xs font-medium text-text-main leading-relaxed">
-                Service is running in terminal. You can close this web page. Shutdown will stop the service.
-              </span>
-            </div>
-          </div>
-
-          {/* Shutdown button */}
-          <Button
-            variant="outline"
-            fullWidth
-            icon="power_settings_new"
-            onClick={() => setShowShutdownModal(true)}
-            className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
+        {/* Footer — Shutdown + Restart */}
+        <div className={cn(
+          "border-t border-black/5 dark:border-white/5",
+          collapsed ? "p-2 flex flex-col gap-1" : "p-3 flex gap-2"
+        )}>
+          <button
+            onClick={() => setShowRestartModal(true)}
+            title="Restart server"
+            className={cn(
+              "flex items-center justify-center gap-2 rounded-lg font-medium transition-all",
+              "text-amber-500 hover:bg-amber-500/10 border border-amber-500/20 hover:border-amber-500/40",
+              collapsed ? "p-2" : "flex-1 px-3 py-2 text-sm"
+            )}
           >
-            Shutdown
-          </Button>
+            <span className="material-symbols-outlined text-[18px]">restart_alt</span>
+            {!collapsed && "Restart"}
+          </button>
+          <button
+            onClick={() => setShowShutdownModal(true)}
+            title="Shutdown server"
+            className={cn(
+              "flex items-center justify-center gap-2 rounded-lg font-medium transition-all",
+              "text-red-500 hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/40",
+              collapsed ? "p-2" : "flex-1 px-3 py-2 text-sm"
+            )}
+          >
+            <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+            {!collapsed && "Shutdown"}
+          </button>
         </div>
       </aside>
 
@@ -214,6 +225,19 @@ export default function Sidebar({ onClose }) {
         loading={isShuttingDown}
       />
 
+      {/* Restart Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showRestartModal}
+        onClose={() => setShowRestartModal(false)}
+        onConfirm={handleRestart}
+        title="Restart Proxy"
+        message="Are you sure you want to restart the proxy server? It will be back online in a few seconds."
+        confirmText="Restart"
+        cancelText="Cancel"
+        variant="warning"
+        loading={isRestarting}
+      />
+
       {/* Disconnected Overlay */}
       {isDisconnected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
@@ -222,7 +246,7 @@ export default function Sidebar({ onClose }) {
               <span className="material-symbols-outlined text-[32px]">power_off</span>
             </div>
             <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
-            <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
+            <p className="text-text-muted mb-6">The proxy server has been stopped or is restarting.</p>
             <Button variant="secondary" onClick={() => globalThis.location.reload()}>
               Reload Page
             </Button>
@@ -235,4 +259,6 @@ export default function Sidebar({ onClose }) {
 
 Sidebar.propTypes = {
   onClose: PropTypes.func,
+  collapsed: PropTypes.bool,
+  onToggleCollapse: PropTypes.func,
 };
