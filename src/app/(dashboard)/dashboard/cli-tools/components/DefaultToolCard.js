@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Card, ModelSelectModal } from "@/shared/components";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Card, Button, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
 
 export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false }) {
@@ -9,12 +9,38 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   const [showModelModal, setShowModelModal] = useState(false);
   const [modelValue, setModelValue] = useState("");
   const [runtimeStatus, setRuntimeStatus] = useState(null);
+  const [message, setMessage] = useState(null);
+  const [saving, setSaving] = useState(false);
   const runtimeFetchStartedRef = useRef(false);
   
-  // Initialize state directly with computed value - no need for useEffect
+  // Initialize state directly with computed value
   const [selectedApiKey, setSelectedApiKey] = useState(() => 
     apiKeys?.length > 0 ? apiKeys[0].key : ""
   );
+
+  // Persist and restore model selection per tool via localStorage
+  useEffect(() => {
+    const savedModel = localStorage.getItem(`9router-cli-model-${toolId}`);
+    if (savedModel) setModelValue(savedModel);
+    const savedKey = localStorage.getItem(`9router-cli-key-${toolId}`);
+    if (savedKey && apiKeys?.some(k => k.key === savedKey)) setSelectedApiKey(savedKey);
+  }, [toolId, apiKeys]);
+
+  const handleModelChange = useCallback((value) => {
+    setModelValue(value);
+    if (value) {
+      localStorage.setItem(`9router-cli-model-${toolId}`, value);
+    } else {
+      localStorage.removeItem(`9router-cli-model-${toolId}`);
+    }
+  }, [toolId]);
+
+  const handleApiKeyChange = useCallback((value) => {
+    setSelectedApiKey(value);
+    if (value) {
+      localStorage.setItem(`9router-cli-key-${toolId}`, value);
+    }
+  }, [toolId]);
 
   useEffect(() => {
     if (!isExpanded || runtimeStatus || runtimeFetchStartedRef.current) return;
@@ -31,7 +57,6 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
       ? selectedApiKey 
       : (!cloudEnabled ? "sk_9router" : "your-api-key");
     
-    // Add /v1 suffix only if not already present (DRY - avoid duplicate)
     const normalizedBaseUrl = baseUrl || "http://localhost:20128";
     const baseUrlWithV1 = normalizedBaseUrl.endsWith("/v1") 
       ? normalizedBaseUrl 
@@ -50,11 +75,50 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   const handleSelectModel = (model) => {
-    setModelValue(model.value);
+    handleModelChange(model.value);
   };
 
   const hasActiveProviders = activeProviders.length > 0;
   const checkingRuntime = isExpanded && runtimeStatus === null;
+
+  // Save config to file (for tools that support it, like Continue)
+  const handleSaveConfig = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
+        ? selectedApiKey 
+        : (!cloudEnabled ? "sk_9router" : "");
+      
+      const normalizedBaseUrl = baseUrl || "http://localhost:20128";
+      const baseUrlWithV1 = normalizedBaseUrl.endsWith("/v1") 
+        ? normalizedBaseUrl 
+        : `${normalizedBaseUrl}/v1`;
+
+      const res = await fetch(`/api/cli-tools/guide-settings/${toolId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          baseUrl: baseUrlWithV1, 
+          apiKey: keyToUse,
+          model: modelValue 
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: data.message || "Configuration saved!" });
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to save" });
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Check if this tool supports direct config file write
+  const supportsDirectSave = ["continue"].includes(toolId);
 
   const renderApiKeySelector = () => {
     return (
@@ -63,7 +127,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           <>
             <select
               value={selectedApiKey}
-              onChange={(e) => setSelectedApiKey(e.target.value)}
+              onChange={(e) => handleApiKeyChange(e.target.value)}
               className="flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
             >
               {apiKeys.map((key) => (
@@ -94,7 +158,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
         <input
           type="text"
           value={modelValue}
-          onChange={(e) => setModelValue(e.target.value)}
+          onChange={(e) => handleModelChange(e.target.value)}
           placeholder="provider/model-id"
           className="flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
         />
@@ -120,7 +184,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
               </span>
             </button>
             <button
-              onClick={() => setModelValue("")}
+              onClick={() => handleModelChange("")}
               className="p-2 text-text-muted hover:text-red-500 rounded transition-colors"
               title="Clear"
             >
@@ -138,7 +202,6 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     return (
       <div className="flex flex-col gap-2 mb-4">
         {tool.notes.map((note, index) => {
-          // Skip cloudCheck note if cloud is enabled
           if (note.type === "cloudCheck" && cloudEnabled) return null;
           
           const isWarning = note.type === "warning";
@@ -280,6 +343,37 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
             <pre className="p-4 bg-bg-secondary rounded-lg border border-border overflow-x-auto">
               <code className="text-sm font-mono whitespace-pre">{replaceVars(tool.codeBlock.code)}</code>
             </pre>
+          </div>
+        )}
+
+        {/* Save / Action buttons */}
+        {canShowGuide() && (
+          <div className="mt-2">
+            {message && (
+              <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs mb-2 ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
+                <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
+                <span>{message.text}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              {supportsDirectSave && (
+                <Button variant="primary" size="sm" onClick={handleSaveConfig} disabled={!modelValue} loading={saving}>
+                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>Save Config
+                </Button>
+              )}
+              {tool.codeBlock && (
+                <Button variant={supportsDirectSave ? "outline" : "primary"} size="sm" onClick={() => handleCopy(tool.codeBlock.code, "codeblock")}>
+                  <span className="material-symbols-outlined text-[14px] mr-1">{copiedField === "codeblock" ? "check" : "content_copy"}</span>
+                  {copiedField === "codeblock" ? "Copied!" : "Copy Config"}
+                </Button>
+              )}
+              {modelValue && (
+                <span className="text-xs text-text-muted flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[14px] text-green-500">check_circle</span>
+                  Selection saved
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>
