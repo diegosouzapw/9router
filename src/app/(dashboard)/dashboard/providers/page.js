@@ -113,18 +113,6 @@ export default function ProvidersPage() {
       textIcon: "AC",
     }));
 
-  const apiKeyProviders = {
-    ...APIKEY_PROVIDERS,
-    ...compatibleProviders.reduce((acc, provider) => {
-      acc[provider.id] = provider;
-      return acc;
-    }, {}),
-    ...anthropicCompatibleProviders.reduce((acc, provider) => {
-      acc[provider.id] = provider;
-      return acc;
-    }, {}),
-  };
-
   if (loading) {
     return (
       <div className="flex flex-col gap-8">
@@ -166,10 +154,25 @@ export default function ProvidersPage() {
         </div>
       </div>
 
-      {/* API Key Providers */}
+      {/* API Key Providers — fixed list */}
+      <div className="flex flex-col gap-4">
+        <h2 className="text-xl font-semibold">API Key Providers</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Object.entries(APIKEY_PROVIDERS).map(([key, info]) => (
+            <ApiKeyProviderCard
+              key={key}
+              providerId={key}
+              provider={info}
+              stats={getProviderStats(key, "apikey")}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* API Key Compatible Providers — dynamic (OpenAI/Anthropic compatible) */}
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">API Key Providers</h2>
+          <h2 className="text-xl font-semibold">API Key Compatible Providers</h2>
           <div className="flex gap-2">
             <Button size="sm" icon="add" onClick={() => setShowAddAnthropicCompatibleModal(true)}>
               Add Anthropic Compatible
@@ -185,16 +188,24 @@ export default function ProvidersPage() {
             </Button>
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Object.entries(apiKeyProviders).map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-            />
-          ))}
-        </div>
+        {compatibleProviders.length === 0 && anthropicCompatibleProviders.length === 0 ? (
+          <div className="text-center py-8 border border-dashed border-border rounded-xl">
+            <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">extension</span>
+            <p className="text-text-muted text-sm">No compatible providers added yet</p>
+            <p className="text-text-muted text-xs mt-1">Use the buttons above to add OpenAI or Anthropic compatible endpoints</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {[...compatibleProviders, ...anthropicCompatibleProviders].map((info) => (
+              <ApiKeyProviderCard
+                key={info.id}
+                providerId={info.id}
+                provider={info}
+                stats={getProviderStats(info.id, "apikey")}
+              />
+            ))}
+          </div>
+        )}
       </div>
       <AddOpenAICompatibleModal
         isOpen={showAddCompatibleModal}

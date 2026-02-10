@@ -44,8 +44,8 @@ export async function GET(request, { params }) {
       
       // For providers that don't use PKCE (like GitHub), don't pass codeChallenge
       let deviceData;
-      if (provider === "github" || provider === "kiro") {
-        // GitHub and Kiro don't use PKCE for device code
+      if (provider === "github" || provider === "kiro" || provider === "kilocode") {
+        // GitHub, Kiro, and KiloCode don't use PKCE for device code
         deviceData = await requestDeviceCode(provider);
       } else {
         // Qwen and other providers use PKCE
@@ -176,7 +176,7 @@ export async function POST(request, { params }) {
 
       // For providers that don't use PKCE (like GitHub, Kiro, Kimi Coding), don't pass codeVerifier
       let result;
-      if (provider === "github" || provider === "kimi-coding") {
+      if (provider === "github" || provider === "kimi-coding" || provider === "kilocode") {
         result = await pollForToken(provider, deviceCode);
       } else if (provider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response

@@ -74,6 +74,22 @@ export const KIMI_CODING_CONFIG = {
   tokenUrl: "https://auth.kimi.com/api/oauth/token",
 };
 
+// KiloCode OAuth Configuration (Custom Device Auth Flow)
+export const KILOCODE_CONFIG = {
+  apiBaseUrl: "https://api.kilo.ai",
+  initiateUrl: "https://api.kilo.ai/api/device-auth/codes",
+  pollUrlBase: "https://api.kilo.ai/api/device-auth/codes",
+};
+
+// Cline OAuth Configuration (Local Callback Flow via app.cline.bot)
+export const CLINE_CONFIG = {
+  appBaseUrl: "https://app.cline.bot",
+  apiBaseUrl: "https://api.cline.bot",
+  authorizeUrl: "https://api.cline.bot/api/v1/auth/authorize",
+  tokenExchangeUrl: "https://api.cline.bot/api/v1/auth/token",
+  refreshUrl: "https://api.cline.bot/api/v1/auth/refresh",
+};
+
 // Antigravity OAuth Configuration (Standard OAuth2 with Google)
 export const ANTIGRAVITY_CONFIG = {
   clientId: process.env.ANTIGRAVITY_OAUTH_CLIENT_ID || "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
@@ -197,4 +213,6 @@ export const PROVIDERS = {
   GITHUB: "github",
   KIRO: "kiro",
   CURSOR: "cursor",
+  KILOCODE: "kilocode",
+  CLINE: "cline",
 };

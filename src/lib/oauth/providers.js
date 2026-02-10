@@ -15,6 +15,8 @@ import {
   GITHUB_CONFIG,
   KIRO_CONFIG,
   CURSOR_CONFIG,
+  KILOCODE_CONFIG,
+  CLINE_CONFIG,
 } from "./constants/oauth";
 
 // Provider configurations
@@ -735,6 +737,160 @@ const PROVIDERS = {
       providerSpecificData: {
         machineId: tokens.machineId,
         authMethod: "imported",
+      },
+    }),
+  },
+
+  kilocode: {
+    config: KILOCODE_CONFIG,
+    flowType: "device_code",
+    requestDeviceCode: async (config) => {
+      // KiloCode uses a custom device auth flow (not standard OAuth)
+      const response = await fetch(config.initiateUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error("Too many pending authorization requests. Please try again later.");
+        }
+        const error = await response.text();
+        throw new Error(`Device auth initiation failed: ${error}`);
+      }
+
+      const data = await response.json();
+      // Map KiloCode response to standard device code format
+      return {
+        device_code: data.code, // Use code as device_code for polling
+        user_code: data.code,
+        verification_uri: data.verificationUrl,
+        verification_uri_complete: data.verificationUrl,
+        expires_in: data.expiresIn || 300,
+        interval: 3,
+      };
+    },
+    pollToken: async (config, deviceCode) => {
+      // KiloCode polls by GET /api/device-auth/codes/{code}
+      const response = await fetch(`${config.pollUrlBase}/${deviceCode}`);
+
+      // Handle custom status codes
+      if (response.status === 202) {
+        // Still pending
+        return { ok: false, data: { error: "authorization_pending" } };
+      }
+      if (response.status === 403) {
+        return { ok: false, data: { error: "access_denied", error_description: "Authorization denied by user" } };
+      }
+      if (response.status === 410) {
+        return { ok: false, data: { error: "expired_token", error_description: "Authorization code expired" } };
+      }
+
+      if (!response.ok) {
+        return { ok: false, data: { error: "poll_failed", error_description: `Poll failed: ${response.status}` } };
+      }
+
+      // Success - map KiloCode {token, userEmail} to standard format
+      const data = await response.json();
+      if (data.status === "approved" && data.token) {
+        return {
+          ok: true,
+          data: {
+            access_token: data.token,
+            _userEmail: data.userEmail,
+          },
+        };
+      }
+
+      return { ok: false, data: { error: "authorization_pending" } };
+    },
+    mapTokens: (tokens) => ({
+      accessToken: tokens.access_token,
+      refreshToken: null, // KiloCode JWT doesn't have refresh tokens
+      expiresIn: null, // JWT expiry is embedded in the token
+      email: tokens._userEmail,
+    }),
+  },
+
+  cline: {
+    config: CLINE_CONFIG,
+    flowType: "authorization_code",
+    buildAuthUrl: (config, redirectUri) => {
+      const params = new URLSearchParams({
+        client_type: "extension",
+        callback_url: redirectUri,
+        redirect_uri: redirectUri,
+      });
+      return `${config.authorizeUrl}?${params.toString()}`;
+    },
+    exchangeToken: async (config, code, redirectUri) => {
+      // Cline callback returns base64-encoded JSON with tokens directly in the code param
+      // The code may have a signature suffix after the JSON - strip it
+      try {
+        // Add padding if needed
+        let base64 = code;
+        const padding = 4 - (base64.length % 4);
+        if (padding !== 4) {
+          base64 += "=".repeat(padding);
+        }
+        const decoded = Buffer.from(base64, "base64").toString("utf-8");
+        // Find the JSON boundary (ends with })
+        const lastBrace = decoded.lastIndexOf("}");
+        if (lastBrace === -1) {
+          throw new Error("No JSON found in decoded code");
+        }
+        const jsonStr = decoded.substring(0, lastBrace + 1);
+        const tokenData = JSON.parse(jsonStr);
+        return {
+          access_token: tokenData.accessToken,
+          refresh_token: tokenData.refreshToken,
+          email: tokenData.email,
+          firstName: tokenData.firstName,
+          lastName: tokenData.lastName,
+          expires_at: tokenData.expiresAt,
+        };
+      } catch (e) {
+        // Fallback: try token exchange via API
+        const response = await fetch(config.tokenExchangeUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            grant_type: "authorization_code",
+            code: code,
+            client_type: "extension",
+            redirect_uri: redirectUri,
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`Cline token exchange failed: ${error}`);
+        }
+
+        const data = await response.json();
+        return {
+          access_token: data.data?.accessToken || data.accessToken,
+          refresh_token: data.data?.refreshToken || data.refreshToken,
+          email: data.data?.userInfo?.email || "",
+          expires_at: data.data?.expiresAt || data.expiresAt,
+        };
+      }
+    },
+    mapTokens: (tokens) => ({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_at
+        ? Math.floor((new Date(tokens.expires_at).getTime() - Date.now()) / 1000)
+        : 3600,
+      email: tokens.email,
+      providerSpecificData: {
+        firstName: tokens.firstName,
+        lastName: tokens.lastName,
       },
     }),
   },

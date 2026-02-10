@@ -115,8 +115,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     try {
       setError(null);
 
-      // Device code flow (GitHub, Qwen, Kiro, Kimi Coding)
-      if (provider === "github" || provider === "qwen" || provider === "kiro" || provider === "kimi-coding") {
+      // Device code flow (GitHub, Qwen, Kiro, Kimi Coding, KiloCode)
+      if (provider === "github" || provider === "qwen" || provider === "kiro" || provider === "kimi-coding" || provider === "kilocode") {
         setIsDeviceCode(true);
         setStep("waiting");
 

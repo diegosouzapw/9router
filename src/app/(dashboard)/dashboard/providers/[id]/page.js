@@ -391,7 +391,20 @@ export default function ProviderDetailPage() {
             )}
           </div>
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">{providerInfo.name}</h1>
+            {providerInfo.website ? (
+              <a
+                href={providerInfo.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-3xl font-semibold tracking-tight hover:underline inline-flex items-center gap-2"
+                style={{ color: providerInfo.color }}
+              >
+                {providerInfo.name}
+                <span className="material-symbols-outlined text-lg opacity-60">open_in_new</span>
+              </a>
+            ) : (
+              <h1 className="text-3xl font-semibold tracking-tight">{providerInfo.name}</h1>
+            )}
             <p className="text-text-muted">
               {connections.length} connection{connections.length === 1 ? "" : "s"}
             </p>
