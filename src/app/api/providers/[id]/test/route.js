@@ -3,12 +3,11 @@ import { getProviderConnectionById, updateProviderConnection, isCloudEnabled } f
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
 import {
-  GEMINI_CONFIG,
-  ANTIGRAVITY_CONFIG,
-  CODEX_CONFIG,
   KIRO_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { validateProviderApiKey } from "@/lib/providers/validation";
+// Use the shared open-sse token refresh with built-in dedup/race-condition cache
+import { getAccessToken } from "open-sse/services/tokenRefresh.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -63,116 +62,26 @@ const OAUTH_TEST_CONFIG = {
 };
 
 /**
- * Refresh OAuth token using refresh_token
+ * Refresh OAuth token using the shared open-sse getAccessToken.
+ * This shares the in-flight promise cache with the SSE layer,
+ * preventing race conditions where two code paths attempt to
+ * refresh the same token concurrently.
+ *
  * @returns {object} { accessToken, expiresIn, refreshToken } or null if failed
  */
 async function refreshOAuthToken(connection) {
-  const provider = connection.provider;
-  const refreshToken = connection.refreshToken;
-
+  const { provider, refreshToken } = connection;
   if (!refreshToken) return null;
 
   try {
-    // Google-based providers (gemini-cli, antigravity)
-    if (provider === "gemini-cli" || provider === "antigravity") {
-      const config = provider === "gemini-cli" ? GEMINI_CONFIG : ANTIGRAVITY_CONFIG;
-      const response = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: config.clientId,
-          client_secret: config.clientSecret,
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-        }),
-      });
+    // Kiro needs extra fields the generic function expects
+    const credentials = {
+      refreshToken,
+      providerSpecificData: connection.providerSpecificData || {},
+    };
 
-      if (!response.ok) return null;
-
-      const data = await response.json();
-      return {
-        accessToken: data.access_token,
-        expiresIn: data.expires_in,
-        refreshToken: data.refresh_token || refreshToken,
-      };
-    }
-
-    // OpenAI/Codex
-    if (provider === "codex") {
-      const response = await fetch(CODEX_CONFIG.tokenUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          client_id: CODEX_CONFIG.clientId,
-          refresh_token: refreshToken,
-        }),
-      });
-
-      if (!response.ok) return null;
-
-      const data = await response.json();
-      return {
-        accessToken: data.access_token,
-        expiresIn: data.expires_in,
-        refreshToken: data.refresh_token || refreshToken,
-      };
-    }
-
-    // Kiro (AWS SSO or Social auth)
-    if (provider === "kiro") {
-      const { clientId, clientSecret, region } = connection;
-
-      // AWS SSO OIDC refresh (Builder ID or IDC)
-      if (clientId && clientSecret) {
-        const endpoint = `https://oidc.${region || "us-east-1"}.amazonaws.com/token`;
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clientId,
-            clientSecret,
-            refreshToken,
-            grantType: "refresh_token",
-          }),
-        });
-
-        if (!response.ok) {
-          const errText = await response.text();
-          console.log(`Kiro AWS SSO refresh failed: ${response.status} - ${errText}`);
-          return null;
-        }
-
-        const data = await response.json();
-        return {
-          accessToken: data.accessToken,
-          expiresIn: data.expiresIn || 3600,
-          refreshToken: data.refreshToken || refreshToken,
-        };
-      }
-
-      // Social auth refresh (Google/GitHub)
-      const response = await fetch(KIRO_CONFIG.socialRefreshUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.log(`Kiro social refresh failed: ${response.status} - ${errText}`);
-        return null;
-      }
-
-      const data = await response.json();
-      return {
-        accessToken: data.accessToken,
-        expiresIn: data.expiresIn || 3600,
-        refreshToken: data.refreshToken || refreshToken,
-      };
-    }
-
-    return null;
+    const result = await getAccessToken(provider, credentials, console);
+    return result; // { accessToken, expiresIn, refreshToken } or null
   } catch (err) {
     console.log(`Error refreshing ${provider} token:`, err.message);
     return null;

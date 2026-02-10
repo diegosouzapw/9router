@@ -206,13 +206,21 @@ async function getGeminiUsage(accessToken) {
   }
 }
 
+// ── Antigravity subscription info cache ──────────────────────────────────────
+// Prevents duplicate loadCodeAssist calls within the same quota cycle.
+// Key: truncated accessToken → { data, fetchedAt }
+const _antigravitySubCache = new Map();
+const ANTIGRAVITY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Antigravity Usage - Fetch quota from Google Cloud Code API
+ * Now calls loadCodeAssist ONCE (cached) and reuses for projectId + plan.
  */
 async function getAntigravityUsage(accessToken, providerSpecificData) {
   try {
-    // First get project ID from subscription info
-    const projectId = await getAntigravityProjectId(accessToken);
+    // Single cached call for subscription info (provides both projectId and plan)
+    const subscriptionInfo = await getAntigravitySubscriptionInfoCached(accessToken);
+    const projectId = subscriptionInfo?.cloudaicompanionProject || null;
     
     // Fetch quota data
     const response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
@@ -285,9 +293,6 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
       }
     }
 
-    // Get subscription info for plan type
-    const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken);
-
     return {
       plan: subscriptionInfo?.currentTier?.name || "Unknown",
       quotas,
@@ -299,15 +304,20 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
 }
 
 /**
- * Get Antigravity project ID from subscription info
+ * Get Antigravity subscription info (cached, 5 min TTL)
+ * Prevents duplicate loadCodeAssist calls within the same quota cycle.
  */
-async function getAntigravityProjectId(accessToken) {
-  try {
-    const info = await getAntigravitySubscriptionInfo(accessToken);
-    return info?.cloudaicompanionProject || null;
-  } catch {
-    return null;
+async function getAntigravitySubscriptionInfoCached(accessToken) {
+  const cacheKey = accessToken.substring(0, 16);
+  const cached = _antigravitySubCache.get(cacheKey);
+
+  if (cached && (Date.now() - cached.fetchedAt) < ANTIGRAVITY_CACHE_TTL_MS) {
+    return cached.data;
   }
+
+  const data = await getAntigravitySubscriptionInfo(accessToken);
+  _antigravitySubCache.set(cacheKey, { data, fetchedAt: Date.now() });
+  return data;
 }
 
 /**

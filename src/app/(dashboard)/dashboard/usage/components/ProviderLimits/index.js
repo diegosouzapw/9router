@@ -7,7 +7,8 @@ import Card from "@/shared/components/Card";
 import { CardSkeleton } from "@/shared/components/Loading";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
-const REFRESH_INTERVAL_MS = 60000;
+const REFRESH_INTERVAL_MS = 120000;
+const MIN_FETCH_INTERVAL_MS = 30000; // Debounce per-connection fetches
 
 // Provider display config
 const PROVIDER_CONFIG = {
@@ -72,11 +73,12 @@ export default function ProviderLimits() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshingAll, setRefreshingAll] = useState(false);
-  const [countdown, setCountdown] = useState(60);
+  const [countdown, setCountdown] = useState(120);
   const [initialLoading, setInitialLoading] = useState(true);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
+  const lastFetchTimeRef = useRef({});
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -93,6 +95,14 @@ export default function ProviderLimits() {
   }, []);
 
   const fetchQuota = useCallback(async (connectionId, provider) => {
+    // Debounce: skip if last fetch was < MIN_FETCH_INTERVAL_MS ago
+    const now = Date.now();
+    const lastFetch = lastFetchTimeRef.current[connectionId] || 0;
+    if (now - lastFetch < MIN_FETCH_INTERVAL_MS) {
+      return; // Skip, data is still fresh
+    }
+    lastFetchTimeRef.current[connectionId] = now;
+
     setLoading((prev) => ({ ...prev, [connectionId]: true }));
     setErrors((prev) => ({ ...prev, [connectionId]: null }));
     try {
@@ -142,7 +152,7 @@ export default function ProviderLimits() {
   const refreshAll = useCallback(async () => {
     if (refreshingAll) return;
     setRefreshingAll(true);
-    setCountdown(60);
+    setCountdown(120);
     try {
       const conns = await fetchConnections();
       const oauthConnections = conns.filter(
@@ -174,7 +184,7 @@ export default function ProviderLimits() {
     }
     intervalRef.current = setInterval(refreshAll, REFRESH_INTERVAL_MS);
     countdownRef.current = setInterval(() => {
-      setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
+      setCountdown((prev) => (prev <= 1 ? 120 : prev - 1));
     }, 1000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -190,7 +200,7 @@ export default function ProviderLimits() {
       } else if (autoRefresh) {
         intervalRef.current = setInterval(refreshAll, REFRESH_INTERVAL_MS);
         countdownRef.current = setInterval(() => {
-          setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
+          setCountdown((prev) => (prev <= 1 ? 120 : prev - 1));
         }, 1000);
       }
     };
