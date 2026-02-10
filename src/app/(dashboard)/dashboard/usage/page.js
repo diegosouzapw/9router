@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { UsageStats, RequestLoggerV2, CardSkeleton, SegmentedControl } from "@/shared/components";
+import { UsageAnalytics, RequestLoggerV2, CardSkeleton, SegmentedControl } from "@/shared/components";
 import ProviderLimits from "./components/ProviderLimits";
 
 export default function UsagePage() {
@@ -22,7 +22,7 @@ export default function UsagePage() {
       {/* Content */}
       {activeTab === "overview" && (
         <Suspense fallback={<CardSkeleton />}>
-          <UsageStats />
+          <UsageAnalytics />
         </Suspense>
       )}
       {activeTab === "logs" && <RequestLoggerV2 />}
