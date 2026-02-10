@@ -1184,7 +1184,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
@@ -1198,22 +1198,24 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
             {connection.globalPriority && (
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
             )}
+            {/* Rate Limit Protection — inline toggle with label */}
+            <span className="text-text-muted/30 select-none">|</span>
+            <button
+              onClick={() => onToggleRateLimit(!rateLimitEnabled)}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-all cursor-pointer ${
+                rateLimitEnabled
+                  ? "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25"
+                  : "bg-black/[0.03] dark:bg-white/[0.03] text-text-muted/50 hover:text-text-muted hover:bg-black/[0.06] dark:hover:bg-white/[0.06]"
+              }`}
+              title={rateLimitEnabled ? "Click to disable rate limit protection" : "Click to enable rate limit protection"}
+            >
+              <span className="material-symbols-outlined text-[13px]">shield</span>
+              {rateLimitEnabled ? "Protected" : "Unprotected"}
+            </button>
           </div>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {/* Rate Limit Protection toggle */}
-        <button
-          onClick={() => onToggleRateLimit(!rateLimitEnabled)}
-          title={rateLimitEnabled ? "Rate Limit Protection: ON — Click to disable" : "Rate Limit Protection: OFF — Click to enable"}
-          className={`p-1.5 rounded-md transition-all ${
-            rateLimitEnabled
-              ? "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25"
-              : "text-text-muted/40 hover:text-text-muted hover:bg-black/5 dark:hover:bg-white/5"
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">shield</span>
-        </button>
         <Toggle
           size="sm"
           checked={connection.isActive ?? true}
