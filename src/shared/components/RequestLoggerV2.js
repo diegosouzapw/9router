@@ -139,8 +139,26 @@ export default function RequestLoggerV2() {
   };
 
   // Copy to clipboard
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text).catch(() => {});
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback for non-HTTPS or older browsers
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        return true;
+      } catch {
+        return false;
+      }
+    }
   };
 
   // Unique accounts for dropdown
@@ -247,8 +265,8 @@ export default function RequestLoggerV2() {
             </div>
           ) : (
             <table className="w-full text-left border-collapse text-xs">
-              <thead className="sticky top-0 bg-bg-subtle border-b border-border z-10">
-                <tr>
+              <thead className="sticky top-0 z-10" style={{ backgroundColor: "var(--bg-primary, #0f1117)" }}>
+                <tr className="border-b border-border" style={{ backgroundColor: "var(--bg-primary, #0f1117)" }}>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Status</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Method</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Model</th>
@@ -479,10 +497,12 @@ function DetailModal({ log, detail, loading, onClose, onCopy }) {
 function PayloadSection({ title, json, onCopy }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
-    onCopy();
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const success = await onCopy();
+    if (success !== false) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
@@ -497,7 +517,7 @@ function PayloadSection({ title, json, onCopy }) {
           {copied ? "Copied!" : "Copy"}
         </button>
       </div>
-      <pre className="p-4 rounded-xl bg-black/30 border border-border overflow-x-auto text-xs font-mono text-text-primary max-h-[400px] overflow-y-auto leading-relaxed">
+      <pre className="p-4 rounded-xl bg-black/30 border border-border overflow-x-auto text-xs font-mono text-text-primary max-h-[600px] overflow-y-auto leading-relaxed whitespace-pre-wrap break-words">
         {json}
       </pre>
     </div>

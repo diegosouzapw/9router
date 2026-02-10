@@ -801,7 +801,7 @@ export async function getCallLogs(filter = {}) {
 }
 
 /**
- * Get a single call log by ID (with full payloads)
+ * Get a single call log by ID (with full payloads from disk when available)
  */
 export async function getCallLogById(id) {
   // Ensure buffer is seeded
@@ -809,5 +809,61 @@ export async function getCallLogById(id) {
     await getCallLogsDb();
   }
   
-  return callLogsBuffer.find(l => l.id === id) || null;
+  const entry = callLogsBuffer.find(l => l.id === id);
+  if (!entry) return null;
+  
+  // If payloads are truncated, try to read full version from disk
+  const needsDisk = entry.requestBody?._truncated || entry.responseBody?._truncated;
+  if (needsDisk && CALL_LOGS_DIR) {
+    try {
+      const diskEntry = readFullLogFromDisk(entry);
+      if (diskEntry) {
+        return {
+          ...entry,
+          requestBody: diskEntry.requestBody ?? entry.requestBody,
+          responseBody: diskEntry.responseBody ?? entry.responseBody,
+        };
+      }
+    } catch (err) {
+      console.error("[callLogs] Failed to read full log from disk:", err.message);
+    }
+  }
+  
+  return entry;
+}
+
+/**
+ * Read the full (untruncated) log entry from disk by matching timestamp + model + status
+ */
+function readFullLogFromDisk(entry) {
+  if (!CALL_LOGS_DIR || !entry.timestamp) return null;
+  
+  try {
+    const date = new Date(entry.timestamp);
+    const dateFolder = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const dir = path.join(CALL_LOGS_DIR, dateFolder);
+    
+    if (!fs.existsSync(dir)) return null;
+    
+    // Build expected filename prefix: HHMMSS_model_status.json
+    const time = `${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}${String(date.getSeconds()).padStart(2, "0")}`;
+    const safeModel = (entry.model || "unknown").replace(/[/:]/g, "-");
+    const expectedName = `${time}_${safeModel}_${entry.status}.json`;
+    
+    // Try exact match first
+    const exactPath = path.join(dir, expectedName);
+    if (fs.existsSync(exactPath)) {
+      return JSON.parse(fs.readFileSync(exactPath, "utf8"));
+    }
+    
+    // Fallback: search by time prefix + status suffix
+    const files = fs.readdirSync(dir).filter(f => f.startsWith(time) && f.endsWith(`_${entry.status}.json`));
+    if (files.length > 0) {
+      return JSON.parse(fs.readFileSync(path.join(dir, files[0]), "utf8"));
+    }
+  } catch (err) {
+    console.error("[callLogs] Disk log read error:", err.message);
+  }
+  
+  return null;
 }
