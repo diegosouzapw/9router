@@ -38,7 +38,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         setStep("input");
 
         // Auto-open browser
-        window.open(data.authUrl, "_blank");
+        window.open(data.authUrl, "kiro_social_auth");
       } catch (err) {
         setError(err.message);
         setStep("error");

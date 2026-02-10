@@ -67,6 +67,13 @@ export const IFLOW_CONFIG = {
   },
 };
 
+// Kimi Coding OAuth Configuration (Device Code Flow)
+export const KIMI_CODING_CONFIG = {
+  clientId: process.env.KIMI_CODING_OAUTH_CLIENT_ID || "17e5f671-d194-4dfb-9706-5516cb48c098",
+  deviceCodeUrl: "https://auth.kimi.com/api/oauth/device_authorization",
+  tokenUrl: "https://auth.kimi.com/api/oauth/token",
+};
+
 // Antigravity OAuth Configuration (Standard OAuth2 with Google)
 export const ANTIGRAVITY_CONFIG = {
   clientId: process.env.ANTIGRAVITY_OAUTH_CLIENT_ID || "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",

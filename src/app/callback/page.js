@@ -63,13 +63,18 @@ function CallbackContent() {
     if (sent && (code || error)) {
       // Use setTimeout to avoid synchronous setState in effect
       setTimeout(() => {
-        setStatus("success");
-        // Auto close after 1.5 seconds
-        setTimeout(() => {
-          window.close();
-          // If can't close (not a popup), show success message
-          setTimeout(() => setStatus("done"), 500);
-        }, 1500);
+        // Only auto-close if opened as popup (has opener) — remote access keeps tab open
+        if (window.opener) {
+          setStatus("success");
+          setTimeout(() => {
+            window.close();
+            // If can't close (not a popup), show success message
+            setTimeout(() => setStatus("done"), 500);
+          }, 1500);
+        } else {
+          // Opened as new tab (remote access) — show URL for manual copy
+          setStatus("done");
+        }
       }, 0);
     } else {
       setTimeout(() => setStatus("manual"), 0);

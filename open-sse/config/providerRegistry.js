@@ -397,8 +397,14 @@ export const REGISTRY = {
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     },
     models: [
+      { id: "glm-4.7-flash", name: "GLM 4.7 Flash" },
       { id: "glm-4.7", name: "GLM 4.7" },
       { id: "glm-4.6v", name: "GLM 4.6V (Vision)" },
+      { id: "glm-4.6", name: "GLM 4.6" },
+      { id: "glm-4.5v", name: "GLM 4.5V (Vision)" },
+      { id: "glm-4.5", name: "GLM 4.5" },
+      { id: "glm-4.5-air", name: "GLM 4.5 Air" },
+      { id: "glm-4-32b", name: "GLM 4 32B" },
     ],
   },
 
@@ -424,11 +430,17 @@ export const REGISTRY = {
     executor: "default",
     baseUrl: "https://api.kimi.com/coding/v1/messages",
     urlSuffix: "?beta=true",
-    authType: "apikey",
+    authType: "oauth",
     authHeader: "x-api-key",
     headers: {
       "Anthropic-Version": "2023-06-01",
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
+    },
+    oauth: {
+      clientIdEnv: "KIMI_CODING_OAUTH_CLIENT_ID",
+      clientIdDefault: "17e5f671-d194-4dfb-9706-5516cb48c098",
+      tokenUrl: "https://auth.kimi.com/api/oauth/token",
+      authUrl: "https://auth.kimi.com/api/oauth/device_authorization"
     },
     models: [
       { id: "kimi-k2.5", name: "Kimi K2.5" },

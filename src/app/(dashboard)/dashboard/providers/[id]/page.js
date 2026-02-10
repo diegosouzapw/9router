@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -25,6 +25,8 @@ export default function ProviderDetailPage() {
   const [modelAliases, setModelAliases] = useState({});
   const [headerImgError, setHeaderImgError] = useState(false);
   const { copied, copy } = useCopyToClipboard();
+  const hasAutoOpened = useRef(false);
+  const userDismissed = useRef(false);
 
   const providerInfo = providerNode
     ? {
@@ -124,8 +126,10 @@ export default function ProviderDetailPage() {
   }, [fetchConnections, fetchAliases]);
 
   // Auto-open Add Connection modal when no connections exist (better UX)
+  // Only fires once on initial load, not on HMR remounts or after user dismissal
   useEffect(() => {
-    if (!loading && connections.length === 0 && providerInfo && !isCompatible) {
+    if (!loading && connections.length === 0 && providerInfo && !isCompatible && !hasAutoOpened.current && !userDismissed.current) {
+      hasAutoOpened.current = true;
       if (isOAuth) {
         setShowOAuthModal(true);
       } else {
@@ -178,10 +182,10 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleOAuthSuccess = () => {
+  const handleOAuthSuccess = useCallback(() => {
     fetchConnections();
     setShowOAuthModal(false);
-  };
+  }, [fetchConnections]);
 
   const handleSaveApiKey = async (formData) => {
     try {
@@ -528,13 +532,13 @@ export default function ProviderDetailPage() {
           isOpen={showOAuthModal}
           providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
-          onClose={() => setShowOAuthModal(false)}
+          onClose={() => { userDismissed.current = true; setShowOAuthModal(false); }}
         />
       ) : providerId === "cursor" ? (
         <CursorAuthModal
           isOpen={showOAuthModal}
           onSuccess={handleOAuthSuccess}
-          onClose={() => setShowOAuthModal(false)}
+          onClose={() => { userDismissed.current = true; setShowOAuthModal(false); }}
         />
       ) : (
         <OAuthModal
@@ -542,7 +546,7 @@ export default function ProviderDetailPage() {
           provider={providerId}
           providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
-          onClose={() => setShowOAuthModal(false)}
+          onClose={() => { userDismissed.current = true; setShowOAuthModal(false); }}
         />
       )}
       <AddApiKeyModal

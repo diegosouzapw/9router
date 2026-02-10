@@ -25,6 +25,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [isLocalhost, setIsLocalhost] = useState(false);
   const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
   const callbackProcessedRef = useRef(false);
+  const flowStartedRef = useRef(false);
 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
@@ -114,8 +115,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     try {
       setError(null);
 
-      // Device code flow (GitHub, Qwen, Kiro)
-      if (provider === "github" || provider === "qwen" || provider === "kiro") {
+      // Device code flow (GitHub, Qwen, Kiro, Kimi Coding)
+      if (provider === "github" || provider === "qwen" || provider === "kiro" || provider === "kimi-coding") {
         setIsDeviceCode(true);
         setStep("waiting");
 
@@ -127,7 +128,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
         // Open verification URL
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
-        if (verifyUrl) window.open(verifyUrl, "_blank");
+        if (verifyUrl) window.open(verifyUrl, "oauth_verify");
 
         // Start polling - pass extraData for Kiro (contains _clientId, _clientSecret)
         const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
@@ -135,16 +136,57 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         return;
       }
 
-      // Authorization code flow - always use localhost with current port (except Codex)
-      let redirectUri;
+      // Codex: use callback server on port 1455 + polling (auto-complete)
       if (provider === "codex") {
-        // Codex requires fixed port 1455
-        redirectUri = "http://localhost:1455/auth/callback";
-      } else {
-        // Always use localhost with current port for OAuth callback
-        const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
-        redirectUri = `http://localhost:${port}/callback`;
+        try {
+          // Start callback server on port 1455
+          const serverRes = await fetch(`/api/oauth/codex/start-callback-server`);
+          const serverData = await serverRes.json();
+          if (!serverRes.ok) throw new Error(serverData.error);
+
+          setAuthData({ ...serverData, redirectUri: serverData.redirectUri });
+          setStep("waiting");
+          window.open(serverData.authUrl, "oauth_auth");
+
+          // Poll for callback (like device code flow)
+          setPolling(true);
+          const maxAttempts = 150; // 5 min at 2s interval
+          for (let i = 0; i < maxAttempts; i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+
+            const pollRes = await fetch(`/api/oauth/codex/poll-callback`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({}),
+            });
+            const pollData = await pollRes.json();
+
+            if (pollData.success) {
+              setStep("success");
+              setPolling(false);
+              onSuccess?.();
+              return;
+            }
+
+            if (pollData.error && !pollData.pending) {
+              throw new Error(pollData.errorDescription || pollData.error);
+            }
+          }
+
+          setPolling(false);
+          throw new Error("Authorization timeout");
+        } catch (codexErr) {
+          setPolling(false);
+          // Fallback to manual input mode
+          setStep("input");
+          setError(codexErr.message + " — You can paste the callback URL manually below.");
+        }
+        return;
       }
+
+      // Authorization code flow (non-Codex providers)
+      const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+      const redirectUri = `http://localhost:${port}/callback`;
 
       const res = await fetch(`/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`);
       const data = await res.json();
@@ -152,12 +194,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       setAuthData({ ...data, redirectUri });
 
-      // For Codex or non-localhost: use manual input mode
-      if (provider === "codex" || !isLocalhost) {
+      // For non-localhost: use manual input mode (user pastes callback URL)
+      if (!isLocalhost) {
         setStep("input");
-        window.open(data.authUrl, "_blank");
+        window.open(data.authUrl, "oauth_auth");
       } else {
-        // Localhost (non-Codex): Open popup and wait for message
+        // Localhost: Open popup and wait for message
         setStep("waiting");
         popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
 
@@ -172,9 +214,18 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   }, [provider, isLocalhost, startPolling]);
 
+  // Reset guard when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      flowStartedRef.current = false;
+    }
+  }, [isOpen]);
+
   // Reset state and start OAuth when modal opens
   useEffect(() => {
     if (isOpen && provider) {
+      if (flowStartedRef.current) return; // Already started, prevent duplicate
+      flowStartedRef.current = true;
       setAuthData(null);
       setCallbackUrl("");
       setError(null);
@@ -212,7 +263,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
     // Method 1: postMessage from popup
     const handleMessage = (event) => {
-      if (event.origin !== window.location.origin) return;
+      // Accept same-origin OR localhost with same port (remote access scenario:
+      // dashboard at 192.168.x:port, callback redirects to localhost:port)
+      const currentPort = window.location.port;
+      const isLocalhostSamePort = event.origin.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/) 
+        && new URL(event.origin).port === currentPort;
+      if (event.origin !== window.location.origin && !isLocalhostSamePort) return;
       if (event.data?.type === "oauth_callback") {
         handleCallback(event.data.data);
       }
