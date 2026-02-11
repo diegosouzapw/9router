@@ -58,7 +58,7 @@ export default function ClineToolCard({
       fetchModelAliases();
       fetchBackups();
     }
-  }, [isExpanded]);
+  }, [isExpanded, clineStatus]);
 
   useEffect(() => {
     if (clineStatus?.settings && !hasInitializedModel.current) {

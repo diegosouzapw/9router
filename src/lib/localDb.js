@@ -74,25 +74,37 @@ function cloneDefaultData() {
   return JSON.parse(JSON.stringify(defaultData));
 }
 
+// Throttle: track last backup time to avoid flooding during rapid writes.
+let _lastBackupAt = 0;
+const BACKUP_THROTTLE_MS = 5000; // 5 seconds
+const MAX_DB_BACKUPS = 10;
+
 /**
- * Create a timestamped backup of the DB file before destructive operations.
- * Only backs up files with meaningful content (>300 bytes).
+ * Create a timestamped backup of the DB file.
+ * Called automatically before every write via withWriteLock.
+ * Throttled to at most once every 5 seconds to avoid flooding.
  */
 function backupDbFile(reason = "auto") {
   try {
     if (!DB_FILE || !fs.existsSync(DB_FILE)) return;
     const stat = fs.statSync(DB_FILE);
-    // Only backup if file has meaningful content (not just defaults)
-    if (stat.size <= 300) return;
+    // Skip if file is essentially empty (just default structure, no real data)
+    if (stat.size <= 100) return;
+
+    // Throttle: skip if we already backed up recently
+    const now = Date.now();
+    if (now - _lastBackupAt < BACKUP_THROTTLE_MS) return;
+    _lastBackupAt = now;
+
     const backupDir = DB_BACKUPS_DIR || path.join(DATA_DIR, "db_backups");
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const backupFile = path.join(backupDir, `db_${timestamp}_${reason}.json`);
     fs.copyFileSync(DB_FILE, backupFile);
     console.log(`[DB] Backup created: ${backupFile} (${stat.size} bytes)`);
-    // Keep only last 10 backups
-    const files = fs.readdirSync(backupDir).filter(f => f.startsWith("db_")).sort();
-    while (files.length > 10) {
+    // Enforce rotation — keep only last N backups
+    const files = fs.readdirSync(backupDir).filter(f => f.startsWith("db_") && f.endsWith(".json")).sort();
+    while (files.length > MAX_DB_BACKUPS) {
       const oldest = files.shift();
       fs.unlinkSync(path.join(backupDir, oldest));
     }
@@ -162,6 +174,8 @@ async function withWriteLock(callback) {
   const resultPromise = mutexPromise.then(async () => {
     _insideWriteLock = true;
     try {
+      // Auto-backup BEFORE every write operation (throttled)
+      backupDbFile("pre-write");
       return await callback();
     } catch (error) {
       console.error("[DB] Write lock error:", error);
@@ -467,7 +481,7 @@ export async function createProviderConnection(data) {
       "displayName", "email", "globalPriority", "defaultModel",
       "accessToken", "refreshToken", "expiresAt", "tokenType",
       "scope", "idToken", "projectId", "apiKey", "testStatus",
-      "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
+      "lastTested", "lastError", "lastErrorAt", "lastErrorType", "lastErrorSource", "rateLimitedUntil", "expiresIn", "errorCode",
       "consecutiveUseCount"
     ];
     
@@ -772,7 +786,7 @@ export async function cleanupProviderConnections() {
       "displayName", "email", "globalPriority", "defaultModel",
       "accessToken", "refreshToken", "expiresAt", "tokenType",
       "scope", "idToken", "projectId", "apiKey", "testStatus",
-      "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn",
+      "lastTested", "lastError", "lastErrorAt", "lastErrorType", "lastErrorSource", "rateLimitedUntil", "expiresIn",
       "consecutiveUseCount"
     ];
 
@@ -1065,4 +1079,103 @@ export async function setProxyConfig(config) {
     await db.write();
     return db.data.proxyConfig;
   });
+}
+
+// ============ DB Backup Management ============
+
+/**
+ * List all available DB backups (sorted newest first).
+ * Returns array of { id, filename, createdAt, size, reason }
+ */
+export async function listDbBackups() {
+  const backupDir = DB_BACKUPS_DIR || path.join(DATA_DIR, "db_backups");
+  try {
+    const entries = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith("db_") && f.endsWith(".json"))
+      .sort()
+      .reverse(); // newest first
+
+    return entries.map(filename => {
+      const filePath = path.join(backupDir, filename);
+      const stat = fs.statSync(filePath);
+      // Parse timestamp and reason from filename: db_2026-02-11T14-00-00-000Z_pre-write.json
+      const match = filename.match(/^db_(.+?)_([^.]+)\.json$/);
+      const timestamp = match ? match[1].replace(/-(\d{3})Z/, '.$1Z').replace(/-/g, (m, offset) => {
+        // Restore ISO format: first 10 chars keep dashes, rest convert back
+        return offset < 10 ? '-' : ':';
+      }) : null;
+      const reason = match ? match[2] : 'unknown';
+      
+      // Read first bit of file to count providerConnections
+      let connectionCount = 0;
+      try {
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        connectionCount = (data.providerConnections || []).length;
+      } catch { /* ignore parse errors */ }
+
+      return {
+        id: filename,
+        filename,
+        createdAt: stat.mtime.toISOString(),
+        size: stat.size,
+        reason,
+        connectionCount,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Restore a DB backup by its filename.
+ * Creates a safety backup of the current state before restoring.
+ */
+export async function restoreDbBackup(backupId) {
+  const backupDir = DB_BACKUPS_DIR || path.join(DATA_DIR, "db_backups");
+  const backupPath = path.join(backupDir, backupId);
+
+  // Validate backup exists and is within the expected directory
+  if (!backupId.startsWith("db_") || !backupId.endsWith(".json")) {
+    throw new Error("Invalid backup ID");
+  }
+  if (!fs.existsSync(backupPath)) {
+    throw new Error(`Backup not found: ${backupId}`);
+  }
+
+  // Validate backup content is valid JSON with expected shape
+  let backupData;
+  try {
+    backupData = JSON.parse(fs.readFileSync(backupPath, 'utf-8'));
+  } catch {
+    throw new Error("Backup file is corrupt (invalid JSON)");
+  }
+  if (!backupData || typeof backupData !== 'object') {
+    throw new Error("Backup file has invalid structure");
+  }
+
+  // Force a safety backup of current state before restoring (bypass throttle)
+  _lastBackupAt = 0;
+  backupDbFile('pre-restore');
+
+  // Copy backup over the current db.json
+  fs.copyFileSync(backupPath, DB_FILE);
+
+  // Reset the singleton so next getDb() reads the restored file
+  dbInstance = null;
+
+  // Reload and ensure DB shape is valid
+  const db = await getDb();
+  const connectionCount = (db.data.providerConnections || []).length;
+
+  console.log(`[DB] Restored backup: ${backupId} (${connectionCount} connections)`);
+
+  return {
+    restored: true,
+    backupId,
+    connectionCount,
+    nodeCount: (db.data.providerNodes || []).length,
+    comboCount: (db.data.combos || []).length,
+    apiKeyCount: (db.data.apiKeys || []).length,
+  };
 }

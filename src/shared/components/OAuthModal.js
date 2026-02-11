@@ -212,7 +212,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling]);
+  }, [provider, isLocalhost, startPolling, onSuccess]);
 
   // Reset guard when modal closes
   useEffect(() => {

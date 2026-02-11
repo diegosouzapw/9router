@@ -29,6 +29,55 @@ export default function ProfilePage() {
   const [newOverrideProvider, setNewOverrideProvider] = useState("");
   const [comboDefaultsSaving, setComboDefaultsSaving] = useState(false);
 
+  // Backup/Restore state
+  const [backups, setBackups] = useState([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
+  const [backupsExpanded, setBackupsExpanded] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState({ type: "", message: "" });
+  const [restoringId, setRestoringId] = useState(null);
+  const [confirmRestoreId, setConfirmRestoreId] = useState(null);
+
+  const loadBackups = async () => {
+    setBackupsLoading(true);
+    try {
+      const res = await fetch("/api/db-backups");
+      const data = await res.json();
+      setBackups(data.backups || []);
+    } catch (err) {
+      console.error("Failed to fetch backups:", err);
+    } finally {
+      setBackupsLoading(false);
+    }
+  };
+
+  const handleRestore = async (backupId) => {
+    setRestoringId(backupId);
+    setRestoreStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/db-backups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backupId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRestoreStatus({
+          type: "success",
+          message: `Restored! ${data.connectionCount} connections, ${data.nodeCount} nodes, ${data.comboCount} combos, ${data.apiKeyCount} API keys.`,
+        });
+        // Refresh backups list
+        await loadBackups();
+      } else {
+        setRestoreStatus({ type: "error", message: data.error || "Restore failed" });
+      }
+    } catch (err) {
+      setRestoreStatus({ type: "error", message: "An error occurred during restore" });
+    } finally {
+      setRestoringId(null);
+      setConfirmRestoreId(null);
+    }
+  };
+
   useEffect(() => {
     fetch("/api/settings")
       .then((res) => res.json())
@@ -546,13 +595,13 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* Data Management */}
+        {/* Data Management & Backups */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-green-500/10 text-green-500">
               <span className="material-symbols-outlined text-[20px]">database</span>
             </div>
-            <h3 className="text-lg font-semibold">Data</h3>
+            <h3 className="text-lg font-semibold">Data & Backups</h3>
           </div>
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between p-4 rounded-lg bg-bg border border-border">
@@ -560,6 +609,128 @@ export default function ProfilePage() {
                 <p className="font-medium">Database Location</p>
                 <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
               </div>
+            </div>
+
+            {/* Backup/Restore Section */}
+            <div className="pt-3 border-t border-border/50">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px] text-amber-500">backup</span>
+                  <p className="font-medium">Backup & Restore</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setBackupsExpanded(!backupsExpanded);
+                    if (!backupsExpanded && backups.length === 0) loadBackups();
+                  }}
+                >
+                  {backupsExpanded ? "Hide" : "View Backups"}
+                </Button>
+              </div>
+              <p className="text-xs text-text-muted mb-3">
+                Backups are created automatically before every database change. Up to 10 versions are kept.
+              </p>
+
+              {restoreStatus.message && (
+                <div className={`p-3 rounded-lg mb-3 text-sm ${
+                  restoreStatus.type === "success"
+                    ? "bg-green-500/10 text-green-500 border border-green-500/20"
+                    : "bg-red-500/10 text-red-500 border border-red-500/20"
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[16px]">
+                      {restoreStatus.type === "success" ? "check_circle" : "error"}
+                    </span>
+                    {restoreStatus.message}
+                  </div>
+                </div>
+              )}
+
+              {backupsExpanded && (
+                <div className="flex flex-col gap-2">
+                  {backupsLoading ? (
+                    <div className="flex items-center justify-center py-6 text-text-muted">
+                      <span className="material-symbols-outlined animate-spin text-[20px] mr-2">progress_activity</span>
+                      Loading backups...
+                    </div>
+                  ) : backups.length === 0 ? (
+                    <div className="text-center py-6 text-text-muted text-sm">
+                      <span className="material-symbols-outlined text-[32px] mb-2 block opacity-40">folder_off</span>
+                      No backups available yet. Backups will be created automatically when data changes.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-text-muted">{backups.length} backup(s) available</span>
+                        <button
+                          onClick={loadBackups}
+                          className="text-xs text-primary hover:underline flex items-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">refresh</span>
+                          Refresh
+                        </button>
+                      </div>
+                      {backups.map((backup) => (
+                        <div
+                          key={backup.id}
+                          className="flex items-center justify-between p-3 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-border/50 hover:border-border transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="material-symbols-outlined text-[16px] text-amber-500">description</span>
+                              <span className="text-sm font-medium truncate">
+                                {new Date(backup.createdAt).toLocaleString("pt-BR")}
+                              </span>
+                              <Badge variant={backup.reason === "pre-restore" ? "warning" : "default"} size="sm">
+                                {backup.reason}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-text-muted ml-6">
+                              <span>{backup.connectionCount} connection(s)</span>
+                              <span>•</span>
+                              <span>{(backup.size / 1024).toFixed(1)} KB</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 ml-3">
+                            {confirmRestoreId === backup.id ? (
+                              <>
+                                <span className="text-xs text-amber-500 font-medium">Confirm?</span>
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => handleRestore(backup.id)}
+                                  loading={restoringId === backup.id}
+                                  className="!bg-amber-500 hover:!bg-amber-600"
+                                >
+                                  Yes
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setConfirmRestoreId(null)}
+                                >
+                                  No
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setConfirmRestoreId(backup.id)}
+                              >
+                                <span className="material-symbols-outlined text-[14px] mr-1">restore</span>
+                                Restore
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </Card>

@@ -447,6 +447,7 @@ export const REGISTRY = {
       clientIdEnv: "KIMI_CODING_OAUTH_CLIENT_ID",
       clientIdDefault: "17e5f671-d194-4dfb-9706-5516cb48c098",
       tokenUrl: "https://auth.kimi.com/api/oauth/token",
+      refreshUrl: "https://auth.kimi.com/api/oauth/token",
       authUrl: "https://auth.kimi.com/api/oauth/device_authorization"
     },
     models: [
@@ -491,6 +492,11 @@ export const REGISTRY = {
     authType: "oauth",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
+    oauth: {
+      tokenUrl: "https://api.cline.bot/api/v1/auth/token",
+      refreshUrl: "https://api.cline.bot/api/v1/auth/refresh",
+      authUrl: "https://api.cline.bot/api/v1/auth/authorize"
+    },
     extraHeaders: {
       "HTTP-Referer": "https://cline.bot",
       "X-Title": "Cline",
@@ -756,7 +762,13 @@ export function generateLegacyProviders() {
     }
 
     // Headers
-    if (entry.headers) p.headers = { ...entry.headers };
+    const mergedHeaders = {
+      ...(entry.headers || {}),
+      ...(entry.extraHeaders || {}),
+    };
+    if (Object.keys(mergedHeaders).length > 0) {
+      p.headers = mergedHeaders;
+    }
 
     // OAuth
     if (entry.oauth) {
@@ -767,6 +779,7 @@ export function generateLegacyProviders() {
         p.clientSecret = process.env[entry.oauth.clientSecretEnv] || entry.oauth.clientSecretDefault;
       }
       if (entry.oauth.tokenUrl) p.tokenUrl = entry.oauth.tokenUrl;
+      if (entry.oauth.refreshUrl) p.refreshUrl = entry.oauth.refreshUrl;
       if (entry.oauth.authUrl) p.authUrl = entry.oauth.authUrl;
     }
 

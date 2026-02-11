@@ -227,10 +227,9 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
     // Registry-driven auth
     const authHeader = entry.authHeader || "bearer";
     if (authHeader === "x-api-key") {
-      if (credentials.apiKey) {
-        headers["x-api-key"] = credentials.apiKey;
-      } else if (credentials.accessToken) {
-        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+      const token = credentials.apiKey || credentials.accessToken;
+      if (token) {
+        headers["x-api-key"] = token;
       }
     } else if (authHeader === "x-goog-api-key") {
       if (credentials.apiKey) {

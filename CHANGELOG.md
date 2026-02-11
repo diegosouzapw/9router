@@ -29,6 +29,14 @@
   - non-stream responses now detect SSE by header/content and parse accordingly.
   - uses Responses SSE parsing for `openai-responses` targets to avoid `JSON.parse` crashes.
   - fixes `stream=false` stability for Codex chat compatibility paths.
+- Fixed CLI tool/runtime and OAuth refresh reliability:
+  - increased Cline runtime health-check timeout to avoid false `not runnable` status.
+  - added refresh support for `cline` and `kimi-coding` OAuth providers.
+  - health-check scheduler now skips providers without supported refresh flow instead of forcing error state.
+- Improved provider health diagnostics and retest flow:
+  - `/api/providers/[id]/test` now returns structured diagnosis (`runtime_error`, `upstream_auth_error`, `token_refresh_failed`, etc).
+  - persisted diagnostic metadata in connections (`lastErrorType`, `lastErrorSource`, `errorCode`, `lastTested`).
+  - provider detail UI now includes explicit `Retest` action per connection and clearer status badges separating local runtime issues from upstream auth failures.
 
 # v0.2.74 (2026-02-11)
 
