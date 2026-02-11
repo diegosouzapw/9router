@@ -213,6 +213,38 @@ const _antigravitySubCache = new Map();
 const ANTIGRAVITY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
+ * Map raw loadCodeAssist tier names to short display labels.
+ * The API may return full names like "INDIVIDUAL", "GCA_TIER_INDIVIDUAL",
+ * "GCA_TIER_BUSINESS_STANDARD", etc.
+ */
+function getAntigravityPlanLabel(subscriptionInfo) {
+  if (!subscriptionInfo) return "Unknown";
+
+  // Try currentTier.name first, fall back to other fields
+  const tierName = subscriptionInfo.currentTier?.name
+    || subscriptionInfo.currentTier?.displayName
+    || subscriptionInfo.subscriptionType
+    || subscriptionInfo.tier
+    || "";
+
+  const upper = tierName.toUpperCase();
+
+  // Map known tier patterns to short labels
+  if (upper.includes("ULTRA")) return "Ultra";
+  if (upper.includes("PRO")) return "Pro";
+  if (upper.includes("ENTERPRISE")) return "Enterprise";
+  if (upper.includes("STANDARD") || upper.includes("BUSINESS")) return "Business";
+  if (upper.includes("INDIVIDUAL") || upper.includes("FREE")) return "Individual";
+
+  // If we still have a tier name, return it as-is (title-cased)
+  if (tierName && tierName !== "Unknown") {
+    return tierName.charAt(0).toUpperCase() + tierName.slice(1).toLowerCase();
+  }
+
+  return "Unknown";
+}
+
+/**
  * Antigravity Usage - Fetch quota from Google Cloud Code API
  * Now calls loadCodeAssist ONCE (cached) and reuses for projectId + plan.
  */
@@ -222,6 +254,13 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
     const subscriptionInfo = await getAntigravitySubscriptionInfoCached(accessToken);
     const projectId = subscriptionInfo?.cloudaicompanionProject || null;
     
+    // Log subscription info for debugging tier labels
+    console.log("[Usage] Antigravity subscriptionInfo:", JSON.stringify({
+      currentTier: subscriptionInfo?.currentTier,
+      subscriptionType: subscriptionInfo?.subscriptionType,
+      tier: subscriptionInfo?.tier,
+    }));
+
     // Fetch quota data
     const response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
       method: "POST",
@@ -294,7 +333,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
     }
 
     return {
-      plan: subscriptionInfo?.currentTier?.name || "Unknown",
+      plan: getAntigravityPlanLabel(subscriptionInfo),
       quotas,
       subscriptionInfo,
     };
