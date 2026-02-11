@@ -766,6 +766,7 @@ if (shouldPersistToDisk) {
  * @param {string} filter.provider - Provider ID
  * @param {string} filter.account - Account name substring
  * @param {string} filter.apiKey - API key ID or name substring
+ * @param {boolean|string} filter.combo - Whether to include only combo calls
  * @param {string} filter.search - Free text search across model, path, account, provider, apiKey, comboName
  * @param {number} filter.limit - Max entries (default 200)
  */
@@ -814,6 +815,10 @@ export async function getCallLogs(filter = {}) {
       l.apiKeyName?.toLowerCase().includes(q) ||
       l.apiKeyId?.toLowerCase().includes(q)
     );
+  }
+
+  if (filter.combo) {
+    logs = logs.filter((l) => !!l.comboName);
   }
   
   if (filter.search) {

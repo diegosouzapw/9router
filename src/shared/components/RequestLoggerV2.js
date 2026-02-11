@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Card from "./Card";
 
 // Protocol badge colors
@@ -85,15 +85,21 @@ function formatApiKeyLabel(apiKeyName, apiKeyId) {
   return `${maskedName} (${maskSegment(apiKeyId, 4, 4)})`;
 }
 
+function getLogTotalTokens(log) {
+  return (log?.tokens?.in || 0) + (log?.tokens?.out || 0);
+}
+
 export default function RequestLoggerV2() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [recording, setRecording] = useState(true);
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
+  const [selectedModel, setSelectedModel] = useState("");
   const [selectedAccount, setSelectedAccount] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedApiKey, setSelectedApiKey] = useState("");
+  const [sortBy, setSortBy] = useState("newest");
   const [selectedLog, setSelectedLog] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState(null);
@@ -107,6 +113,8 @@ export default function RequestLoggerV2() {
       if (search) params.set("search", search);
       if (activeFilter === "error") params.set("status", "error");
       if (activeFilter === "ok") params.set("status", "ok");
+      if (activeFilter === "combo") params.set("combo", "1");
+      if (selectedModel) params.set("model", selectedModel);
       if (selectedProvider) params.set("provider", selectedProvider);
       if (selectedAccount) params.set("account", selectedAccount);
       if (selectedApiKey) params.set("apiKey", selectedApiKey);
@@ -122,7 +130,7 @@ export default function RequestLoggerV2() {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [search, activeFilter, selectedAccount, selectedProvider, selectedApiKey]);
+  }, [search, activeFilter, selectedModel, selectedAccount, selectedProvider, selectedApiKey]);
 
   useEffect(() => {
     const showLoading = !hasLoadedRef.current;
@@ -139,8 +147,42 @@ export default function RequestLoggerV2() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [recording, fetchLogs]);
   
-  // Client-side combo filter
-  const filteredLogs = activeFilter === "combo" ? logs.filter(l => l.comboName) : logs;
+  const filteredLogs = useMemo(() => {
+    if (activeFilter === "combo") return logs.filter(l => l.comboName);
+    return logs;
+  }, [activeFilter, logs]);
+
+  const sortedLogs = useMemo(() => {
+    const arr = [...filteredLogs];
+
+    arr.sort((a, b) => {
+      switch (sortBy) {
+        case "oldest":
+          return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+        case "tokens_desc":
+          return getLogTotalTokens(b) - getLogTotalTokens(a);
+        case "tokens_asc":
+          return getLogTotalTokens(a) - getLogTotalTokens(b);
+        case "duration_desc":
+          return (b.duration || 0) - (a.duration || 0);
+        case "duration_asc":
+          return (a.duration || 0) - (b.duration || 0);
+        case "status_desc":
+          return (b.status || 0) - (a.status || 0);
+        case "status_asc":
+          return (a.status || 0) - (b.status || 0);
+        case "model_asc":
+          return (a.model || "").localeCompare(b.model || "");
+        case "model_desc":
+          return (b.model || "").localeCompare(a.model || "");
+        case "newest":
+        default:
+          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      }
+    });
+
+    return arr;
+  }, [filteredLogs, sortBy]);
 
   // Fetch log detail
   const openDetail = async (logEntry) => {
@@ -190,13 +232,13 @@ export default function RequestLoggerV2() {
 
   // Unique accounts and providers for dropdowns
   const uniqueAccounts = [...new Set(logs.map(l => l.account).filter(a => a && a !== "-"))];
+  const uniqueModels = [...new Set(logs.map(l => l.model).filter(Boolean))].sort();
   const uniqueProviders = [...new Set(logs.map(l => l.provider).filter(p => p && p !== "-"))].sort();
   const uniqueApiKeys = [...new Set(
     logs
       .map((l) => l.apiKeyId || l.apiKeyName)
       .filter(Boolean)
   )].sort();
-  const uniqueCombos = [...new Set(logs.map(l => l.comboName).filter(Boolean))].sort();
 
   // Stats
   const totalCount = filteredLogs.length;
@@ -245,6 +287,18 @@ export default function RequestLoggerV2() {
             const pc = PROVIDER_COLORS[p];
             return <option key={p} value={p}>{pc?.label || p.toUpperCase()}</option>;
           })}
+        </select>
+
+        {/* Model Dropdown */}
+        <select
+          value={selectedModel}
+          onChange={(e) => setSelectedModel(e.target.value)}
+          className="px-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary focus:outline-none focus:border-primary appearance-none cursor-pointer min-w-[180px]"
+        >
+          <option value="">All Models</option>
+          {uniqueModels.map((model) => (
+            <option key={model} value={model}>{model}</option>
+          ))}
         </select>
 
         {/* Account Dropdown */}
@@ -296,7 +350,29 @@ export default function RequestLoggerV2() {
               {apiKeyCount} keys
             </span>
           )}
+          <span className="px-2 py-1 rounded bg-bg-subtle border border-border font-mono">
+            {sortedLogs.length} shown
+          </span>
         </div>
+
+        {/* Sort Dropdown */}
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="px-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary focus:outline-none focus:border-primary appearance-none cursor-pointer min-w-[150px]"
+          title="Sort logs"
+        >
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="tokens_desc">Tokens ↓</option>
+          <option value="tokens_asc">Tokens ↑</option>
+          <option value="duration_desc">Duration ↓</option>
+          <option value="duration_asc">Duration ↑</option>
+          <option value="status_desc">Status ↓</option>
+          <option value="status_asc">Status ↑</option>
+          <option value="model_asc">Model A-Z</option>
+          <option value="model_desc">Model Z-A</option>
+        </select>
 
         {/* Refresh */}
         <button
@@ -363,6 +439,10 @@ export default function RequestLoggerV2() {
               <span className="material-symbols-outlined text-[48px] mb-2 block opacity-40">receipt_long</span>
               No logs recorded yet. Make some API calls to see them here.
             </div>
+          ) : sortedLogs.length === 0 ? (
+            <div className="p-8 text-center text-text-muted">
+              No logs match the current filters.
+            </div>
           ) : (
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-10" style={{ backgroundColor: "var(--bg-primary, #0f1117)" }}>
@@ -380,7 +460,7 @@ export default function RequestLoggerV2() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/30">
-                {filteredLogs.map((log) => {
+                {sortedLogs.map((log) => {
                   const statusStyle = getStatusStyle(log.status);
                   const protocolKey = log.sourceFormat || log.provider;
                   const protocol = PROTOCOL_COLORS[protocolKey] || PROTOCOL_COLORS[log.provider] || { bg: "#6B7280", text: "#fff", label: (protocolKey || log.provider || "-").toUpperCase() };

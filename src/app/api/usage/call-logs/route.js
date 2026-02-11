@@ -11,6 +11,7 @@ export async function GET(request) {
     if (searchParams.get("provider")) filter.provider = searchParams.get("provider");
     if (searchParams.get("account")) filter.account = searchParams.get("account");
     if (searchParams.get("apiKey")) filter.apiKey = searchParams.get("apiKey");
+    if (searchParams.get("combo")) filter.combo = searchParams.get("combo");
     if (searchParams.get("search")) filter.search = searchParams.get("search");
     if (searchParams.get("limit")) filter.limit = parseInt(searchParams.get("limit"));
     
