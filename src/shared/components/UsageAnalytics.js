@@ -325,6 +325,107 @@ function WeeklyPattern({ weeklyPattern }) {
   );
 }
 
+/** Most Active Day — last 7 days peak */
+function MostActiveDay7d({ activityMap }) {
+  const data = useMemo(() => {
+    if (!activityMap) return null;
+    const today = new Date();
+    let peakKey = null;
+    let peakVal = 0;
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const val = activityMap[key] || 0;
+      if (val > peakVal) {
+        peakVal = val;
+        peakKey = key;
+      }
+    }
+    if (!peakKey || peakVal === 0) return null;
+
+    const peakDate = new Date(peakKey + "T12:00:00");
+    const weekdays = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+    const months = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+    return {
+      weekday: weekdays[peakDate.getDay()],
+      label: `${peakDate.getDate()} de ${months[peakDate.getMonth()]}`,
+      tokens: peakVal,
+    };
+  }, [activityMap]);
+
+  return (
+    <Card className="p-4 flex flex-col justify-center" style={{ minHeight: 0 }}>
+      <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-muted)" }}>Most Active Day</h3>
+      {data ? (
+        <>
+          <span className="text-xl font-bold capitalize" style={{ lineHeight: 1.2 }}>{data.weekday}</span>
+          <span className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+            {data.label} · {fmt(data.tokens)} tokens
+          </span>
+        </>
+      ) : (
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>Sem dados nos últimos 7 dias</span>
+      )}
+    </Card>
+  );
+}
+
+/** Weekly Squares — intensity squares for the last 7 days */
+function WeeklySquares7d({ activityMap }) {
+  const days = useMemo(() => {
+    if (!activityMap) return [];
+    const today = new Date();
+    const result = [];
+    let maxVal = 0;
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const val = activityMap[key] || 0;
+      if (val > maxVal) maxVal = val;
+      const shortDays = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
+      result.push({ key, val, label: shortDays[d.getDay()] });
+    }
+    // Normalize
+    return result.map(d => ({ ...d, intensity: maxVal > 0 ? d.val / maxVal : 0 }));
+  }, [activityMap]);
+
+  function getSquareStyle(intensity) {
+    if (intensity === 0) return { background: "rgba(255,255,255,0.04)" };
+    // Gradient from muted teal to deep primary
+    const opacity = 0.15 + intensity * 0.75;
+    return { background: `rgba(217, 119, 87, ${opacity.toFixed(2)})` };
+  }
+
+  return (
+    <Card className="p-4 flex flex-col justify-center" style={{ minHeight: 0 }}>
+      <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>Weekly</h3>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+        {days.map((d, i) => (
+          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: 1 }}>
+            <div
+              title={`${d.key}: ${fmtFull(d.val)} tokens`}
+              style={{
+                width: "100%",
+                aspectRatio: "1",
+                borderRadius: 8,
+                ...getSquareStyle(d.intensity),
+                transition: "all 0.2s",
+                cursor: "default",
+                maxWidth: 48,
+              }}
+            />
+            <span style={{ fontSize: 9, fontWeight: 600, color: "var(--text-muted)", letterSpacing: "0.03em" }}>{d.label}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 /** Model Breakdown Table */
 function ModelTable({ byModel, summary }) {
   const [sortBy, setSortBy] = useState("totalTokens");
@@ -514,8 +615,16 @@ export default function UsageAnalytics() {
         <StatCard icon="model_training" label="Models" value={s.uniqueModels || 0} />
       </div>
 
-      {/* Activity Heatmap */}
-      <ActivityHeatmap activityMap={analytics?.activityMap} />
+      {/* Activity Heatmap + Weekly Widgets */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+        <div style={{ gridColumn: "span 2" }}>
+          <ActivityHeatmap activityMap={analytics?.activityMap} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <MostActiveDay7d activityMap={analytics?.activityMap} />
+          <WeeklySquares7d activityMap={analytics?.activityMap} />
+        </div>
+      </div>
 
       {/* Token Trend + Account Donut */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
