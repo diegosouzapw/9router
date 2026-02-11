@@ -13,6 +13,7 @@ import { handleComboChat } from "open-sse/services/combo.js";
 import { HTTP_STATUS } from "open-sse/config/constants.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { getSettings, getCombos } from "../../lib/localDb.js";
 
 /**
  * Handle chat completion request
@@ -92,12 +93,20 @@ export async function handleChat(request, clientRawRequest = null) {
       return true;
     };
 
+    // Fetch settings and all combos for config cascade and nested resolution
+    const [settings, allCombos] = await Promise.all([
+      getSettings().catch(() => ({})),
+      getCombos().catch(() => []),
+    ]);
+
     return handleComboChat({
       body,
       combo,
       handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, combo.name),
       isModelAvailable,
-      log
+      log,
+      settings,
+      allCombos,
     });
   }
 

@@ -6,6 +6,9 @@
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { recordComboRequest } from "./comboMetrics.js";
+import { resolveComboConfig, getDefaultComboConfig } from "./comboConfig.js";
+
+const MAX_COMBO_DEPTH = 3;
 
 /**
  * Normalize a model entry to { model, weight }
@@ -38,6 +41,70 @@ export function getComboModelsFromData(modelStr, combosData) {
   const combo = getComboFromData(modelStr, combosData);
   if (!combo) return null;
   return combo.models.map(m => normalizeModelEntry(m).model);
+}
+
+/**
+ * Validate combo DAG — detect circular references and enforce max depth
+ * @param {string} comboName - Name of the combo to validate
+ * @param {Array} allCombos - All combos in the system
+ * @param {Set} [visited] - Set of already visited combo names (for cycle detection)
+ * @param {number} [depth] - Current depth level
+ * @throws {Error} If circular reference or max depth exceeded
+ */
+export function validateComboDAG(comboName, allCombos, visited = new Set(), depth = 0) {
+  if (depth > MAX_COMBO_DEPTH) {
+    throw new Error(`Max combo nesting depth (${MAX_COMBO_DEPTH}) exceeded at "${comboName}"`);
+  }
+  if (visited.has(comboName)) {
+    throw new Error(`Circular combo reference detected: ${comboName}`);
+  }
+  visited.add(comboName);
+
+  const combos = Array.isArray(allCombos) ? allCombos : (allCombos?.combos || []);
+  const combo = combos.find(c => c.name === comboName);
+  if (!combo || !combo.models) return;
+
+  for (const entry of combo.models) {
+    const modelName = normalizeModelEntry(entry).model;
+    // Check if this model name is itself a combo (not a provider/model pattern)
+    const nestedCombo = combos.find(c => c.name === modelName);
+    if (nestedCombo) {
+      validateComboDAG(modelName, combos, new Set(visited), depth + 1);
+    }
+  }
+}
+
+/**
+ * Resolve nested combos by expanding inline to a flat model list
+ * Respects max depth and detects cycles
+ * @param {Object} combo - The combo object
+ * @param {Array} allCombos - All combos in the system
+ * @param {Set} [visited] - For cycle detection
+ * @param {number} [depth] - Current depth
+ * @returns {Array} Flat array of model strings
+ */
+export function resolveNestedComboModels(combo, allCombos, visited = new Set(), depth = 0) {
+  if (depth > MAX_COMBO_DEPTH) return combo.models.map(m => normalizeModelEntry(m).model);
+  if (visited.has(combo.name)) return []; // cycle safety
+  visited.add(combo.name);
+
+  const combos = Array.isArray(allCombos) ? allCombos : (allCombos?.combos || []);
+  const resolved = [];
+
+  for (const entry of (combo.models || [])) {
+    const modelName = normalizeModelEntry(entry).model;
+    const nestedCombo = combos.find(c => c.name === modelName);
+
+    if (nestedCombo) {
+      // Recursively expand the nested combo
+      const nested = resolveNestedComboModels(nestedCombo, combos, new Set(visited), depth + 1);
+      resolved.push(...nested);
+    } else {
+      resolved.push(modelName);
+    }
+  }
+
+  return resolved;
 }
 
 /**
@@ -85,21 +152,43 @@ function orderModelsForWeightedFallback(models, selectedModel) {
  * @param {Object} options.log - Logger object
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, combo, handleSingleModel, isModelAvailable, log }) {
+export async function handleComboChat({ body, combo, handleSingleModel, isModelAvailable, log, settings, allCombos }) {
   const strategy = combo.strategy || "priority";
   const models = combo.models || [];
-  const config = combo.config || {};
+  
+  // Use config cascade if settings provided
+  const config = settings 
+    ? resolveComboConfig(combo, settings) 
+    : { ...getDefaultComboConfig(), ...(combo.config || {}) };
   const maxRetries = config.maxRetries ?? 1;
   const retryDelayMs = config.retryDelayMs ?? 2000;
 
   let orderedModels;
 
-  if (strategy === "weighted") {
+  // Resolve nested combos if allCombos provided
+  if (allCombos) {
+    const flatModels = resolveNestedComboModels(combo, allCombos);
+    if (strategy === "weighted") {
+      // For weighted + nested, select from original models then fallback sequentially
+      const selected = selectWeightedModel(models);
+      orderedModels = orderModelsForWeightedFallback(models, selected);
+      // But if any were nested, they are already resolved to flat
+      orderedModels = orderedModels.flatMap(m => {
+        const combos = Array.isArray(allCombos) ? allCombos : (allCombos?.combos || []);
+        const nested = combos.find(c => c.name === m);
+        if (nested) return resolveNestedComboModels(nested, allCombos);
+        return [m];
+      });
+      log.info("COMBO", `Weighted selection with nested resolution: ${orderedModels.length} total models`);
+    } else {
+      orderedModels = flatModels;
+      log.info("COMBO", `Priority with nested resolution: ${orderedModels.length} total models`);
+    }
+  } else if (strategy === "weighted") {
     const selected = selectWeightedModel(models);
     orderedModels = orderModelsForWeightedFallback(models, selected);
     log.info("COMBO", `Weighted selection: ${selected} (from ${models.length} models)`);
   } else {
-    // Priority: use array order
     orderedModels = models.map(m => normalizeModelEntry(m).model);
   }
 
