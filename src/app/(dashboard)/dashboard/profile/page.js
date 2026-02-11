@@ -330,7 +330,7 @@ export default function ProfilePage() {
                 <p className="text-xs text-text-muted">Applied to new combos without explicit strategy</p>
               </div>
               <div className="inline-flex p-0.5 rounded-md bg-black/5 dark:bg-white/5">
-                {["priority", "weighted"].map((s) => (
+                {["priority", "weighted", "round-robin"].map((s) => (
                   <button
                     key={s}
                     onClick={() => setComboDefaults(prev => ({ ...prev, strategy: s }))}
@@ -341,7 +341,7 @@ export default function ProfilePage() {
                         : "text-text-muted hover:text-text-main"
                     )}
                   >
-                    {s}
+                    {s === "round-robin" ? "Round-Robin" : s}
                   </button>
                 ))}
               </div>
@@ -369,6 +369,37 @@ export default function ProfilePage() {
                 </div>
               ))}
             </div>
+
+            {/* Round-Robin specific settings */}
+            {comboDefaults.strategy === "round-robin" && (
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border/50">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-text-muted">Concurrency / Model</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={comboDefaults.concurrencyPerModel ?? ""}
+                    placeholder="3"
+                    onChange={(e) => setComboDefaults(prev => ({ ...prev, concurrencyPerModel: parseInt(e.target.value) || 0 }))}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-text-muted">Queue Timeout (ms)</label>
+                  <Input
+                    type="number"
+                    min={1000}
+                    max={120000}
+                    step={1000}
+                    value={comboDefaults.queueTimeoutMs ?? ""}
+                    placeholder="30000"
+                    onChange={(e) => setComboDefaults(prev => ({ ...prev, queueTimeoutMs: parseInt(e.target.value) || 0 }))}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Toggles */}
             <div className="flex flex-col gap-3 pt-3 border-t border-border/50">

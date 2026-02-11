@@ -1,14 +1,19 @@
 /**
  * Shared combo (model combo) handling with fallback support
- * Supports: priority (sequential) and weighted (probabilistic) strategies
+ * Supports: priority (sequential), weighted (probabilistic), and round-robin (circular) strategies
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { recordComboRequest } from "./comboMetrics.js";
 import { resolveComboConfig, getDefaultComboConfig } from "./comboConfig.js";
+import * as semaphore from "./rateLimitSemaphore.js";
 
 const MAX_COMBO_DEPTH = 3;
+
+// In-memory atomic counter per combo for round-robin distribution
+// Resets on server restart (by design — no stale state)
+const rrCounters = new Map();
 
 /**
  * Normalize a model entry to { model, weight }
@@ -155,6 +160,11 @@ function orderModelsForWeightedFallback(models, selectedModel) {
 export async function handleComboChat({ body, combo, handleSingleModel, isModelAvailable, log, settings, allCombos }) {
   const strategy = combo.strategy || "priority";
   const models = combo.models || [];
+
+  // Route to round-robin handler if strategy matches
+  if (strategy === "round-robin") {
+    return handleRoundRobinCombo({ body, combo, handleSingleModel, isModelAvailable, log, settings, allCombos });
+  }
   
   // Use config cascade if settings provided
   const config = settings 
@@ -295,6 +305,181 @@ export async function handleComboChat({ body, combo, handleSingleModel, isModelA
   }
 
   log.warn("COMBO", `All models failed | ${msg}`);
+  return new Response(
+    JSON.stringify({ error: { message: msg } }),
+    { status, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+/**
+ * Handle round-robin combo: each request goes to the next model in circular order.
+ * Uses semaphore-based concurrency control with queue + rate-limit awareness.
+ *
+ * Flow:
+ * 1. Pick target model via atomic counter (counter % models.length)
+ * 2. Acquire semaphore slot (may queue if at max concurrency)
+ * 3. Send request to target model
+ * 4. On 429 → mark model rate-limited, try next model in rotation
+ * 5. On semaphore timeout → fallback to next available model
+ */
+async function handleRoundRobinCombo({ body, combo, handleSingleModel, isModelAvailable, log, settings, allCombos }) {
+  const models = combo.models || [];
+  const config = settings
+    ? resolveComboConfig(combo, settings)
+    : { ...getDefaultComboConfig(), ...(combo.config || {}) };
+  const concurrency = config.concurrencyPerModel ?? 3;
+  const queueTimeout = config.queueTimeoutMs ?? 30000;
+  const maxRetries = config.maxRetries ?? 1;
+  const retryDelayMs = config.retryDelayMs ?? 2000;
+
+  // Resolve models (support nested combos)
+  let orderedModels;
+  if (allCombos) {
+    orderedModels = resolveNestedComboModels(combo, allCombos);
+  } else {
+    orderedModels = models.map(m => normalizeModelEntry(m).model);
+  }
+
+  const modelCount = orderedModels.length;
+  if (modelCount === 0) {
+    return unavailableResponse(406, "Round-robin combo has no models");
+  }
+
+  // Get and increment atomic counter
+  const counter = rrCounters.get(combo.name) || 0;
+  rrCounters.set(combo.name, counter + 1);
+  const startIndex = counter % modelCount;
+
+  const startTime = Date.now();
+  let lastError = null;
+  let lastStatus = null;
+  let earliestRetryAfter = null;
+  let fallbackCount = 0;
+
+  // Try each model starting from the round-robin target
+  for (let offset = 0; offset < modelCount; offset++) {
+    const modelIndex = (startIndex + offset) % modelCount;
+    const modelStr = orderedModels[modelIndex];
+
+    // Pre-check availability
+    if (isModelAvailable) {
+      const available = await isModelAvailable(modelStr);
+      if (!available) {
+        log.info("COMBO-RR", `Skipping ${modelStr} (all accounts in cooldown)`);
+        if (offset > 0) fallbackCount++;
+        continue;
+      }
+    }
+
+    // Acquire semaphore slot (may wait in queue)
+    let release;
+    try {
+      release = await semaphore.acquire(modelStr, {
+        maxConcurrency: concurrency,
+        timeoutMs: queueTimeout,
+      });
+    } catch (err) {
+      if (err.code === "SEMAPHORE_TIMEOUT") {
+        log.warn("COMBO-RR", `Semaphore timeout for ${modelStr}, trying next model`);
+        if (offset > 0) fallbackCount++;
+        continue;
+      }
+      throw err;
+    }
+
+    // Retry loop within this model
+    try {
+      for (let retry = 0; retry <= maxRetries; retry++) {
+        if (retry > 0) {
+          log.info("COMBO-RR", `Retrying ${modelStr} in ${retryDelayMs}ms (attempt ${retry + 1}/${maxRetries + 1})`);
+          await new Promise(r => setTimeout(r, retryDelayMs));
+        }
+
+        log.info("COMBO-RR", `[RR #${counter}] → ${modelStr}${offset > 0 ? ` (fallback +${offset})` : ""}${retry > 0 ? ` (retry ${retry})` : ""}`);
+
+        const result = await handleSingleModel(body, modelStr);
+
+        // Success
+        if (result.ok) {
+          const latencyMs = Date.now() - startTime;
+          log.info("COMBO-RR", `${modelStr} succeeded (${latencyMs}ms, ${fallbackCount} fallbacks)`);
+          recordComboRequest(combo.name, modelStr, {
+            success: true, latencyMs, fallbackCount, strategy: "round-robin",
+          });
+          return result;
+        }
+
+        // Extract error info
+        let errorText = result.statusText || "";
+        let retryAfter = null;
+        try {
+          const cloned = result.clone();
+          try {
+            const errorBody = await cloned.json();
+            errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+            retryAfter = errorBody?.retryAfter || null;
+          } catch {
+            try {
+              const text = await result.text();
+              if (text) errorText = text.substring(0, 500);
+            } catch { /* Body consumed */ }
+          }
+        } catch { /* Clone failed */ }
+
+        if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
+          earliestRetryAfter = retryAfter;
+        }
+
+        if (typeof errorText !== "string") {
+          try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
+        }
+
+        const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+
+        // Rate-limited → mark in semaphore so queue pauses
+        if (result.status === 429 && cooldownMs > 0) {
+          semaphore.markRateLimited(modelStr, cooldownMs);
+          log.warn("COMBO-RR", `${modelStr} rate-limited, cooldown ${cooldownMs}ms`);
+        }
+
+        if (!shouldFallback) {
+          log.warn("COMBO-RR", `${modelStr} failed (no fallback)`, { status: result.status });
+          return result;
+        }
+
+        // Transient error → retry same model
+        const isTransient = [408, 429, 500, 502, 503, 504].includes(result.status);
+        if (retry < maxRetries && isTransient) {
+          continue;
+        }
+
+        // Done with this model
+        lastError = errorText || String(result.status);
+        if (!lastStatus) lastStatus = result.status;
+        if (offset > 0) fallbackCount++;
+        log.warn("COMBO-RR", `${modelStr} failed, trying next model`, { status: result.status });
+        break;
+      }
+    } finally {
+      // ALWAYS release semaphore slot
+      release();
+    }
+  }
+
+  // All models exhausted
+  const latencyMs = Date.now() - startTime;
+  recordComboRequest(combo.name, null, { success: false, latencyMs, fallbackCount, strategy: "round-robin" });
+
+  const status = lastStatus || 406;
+  const msg = lastError || "All round-robin combo models unavailable";
+
+  if (earliestRetryAfter) {
+    const retryHuman = formatRetryAfter(earliestRetryAfter);
+    log.warn("COMBO-RR", `All models failed | ${msg} (${retryHuman})`);
+    return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
+  }
+
+  log.warn("COMBO-RR", `All models failed | ${msg}`);
   return new Response(
     JSON.stringify({ error: { message: msg } }),
     { status, headers: { "Content-Type": "application/json" } }

@@ -16,6 +16,7 @@
  */
 
 import { getImageProvider, parseImageModel } from "../config/imageRegistry.js";
+import { saveCallLog } from "@/lib/usageDb.js";
 
 /**
  * Handle image generation request
@@ -57,7 +58,17 @@ export async function handleImageGeneration({ body, credentials, log }) {
  * Uses Gemini's generateContent API with responseModalities: ["TEXT", "IMAGE"]
  */
 async function handleGeminiImageGeneration({ model, providerConfig, body, credentials, log }) {
+  const startTime = Date.now();
   const url = `${providerConfig.baseUrl}/${model}:generateContent`;
+  const provider = "antigravity";
+
+  // Summarized request for call log
+  const logRequestBody = {
+    model: body.model,
+    prompt: typeof body.prompt === "string" ? body.prompt.slice(0, 200) : String(body.prompt ?? "").slice(0, 200),
+    size: body.size || "default",
+    n: body.n || 1,
+  };
 
   const geminiBody = {
     contents: [
@@ -95,6 +106,18 @@ async function handleGeminiImageGeneration({ model, providerConfig, body, creden
       if (log) {
         log.error("IMAGE", `antigravity error ${response.status}: ${errorText.slice(0, 200)}`);
       }
+
+      saveCallLog({
+        method: "POST",
+        path: "/v1/images/generations",
+        status: response.status,
+        model: `antigravity/${model}`,
+        provider,
+        duration: Date.now() - startTime,
+        error: errorText.slice(0, 500),
+        requestBody: logRequestBody,
+      }).catch(() => {});
+
       return { success: false, status: response.status, error: errorText };
     }
 
@@ -115,6 +138,18 @@ async function handleGeminiImageGeneration({ model, providerConfig, body, creden
       }
     }
 
+    saveCallLog({
+      method: "POST",
+      path: "/v1/images/generations",
+      status: 200,
+      model: `antigravity/${model}`,
+      provider,
+      duration: Date.now() - startTime,
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      requestBody: logRequestBody,
+      responseBody: { images_count: images.length },
+    }).catch(() => {});
+
     return {
       success: true,
       data: {
@@ -126,6 +161,18 @@ async function handleGeminiImageGeneration({ model, providerConfig, body, creden
     if (log) {
       log.error("IMAGE", `antigravity fetch error: ${err.message}`);
     }
+
+    saveCallLog({
+      method: "POST",
+      path: "/v1/images/generations",
+      status: 502,
+      model: `antigravity/${model}`,
+      provider,
+      duration: Date.now() - startTime,
+      error: err.message,
+      requestBody: logRequestBody,
+    }).catch(() => {});
+
     return { success: false, status: 502, error: `Image provider error: ${err.message}` };
   }
 }
@@ -134,6 +181,17 @@ async function handleGeminiImageGeneration({ model, providerConfig, body, creden
  * Handle OpenAI-compatible image generation (standard providers + Nebius fallback)
  */
 async function handleOpenAIImageGeneration({ model, provider, providerConfig, body, credentials, log }) {
+  const startTime = Date.now();
+
+  // Summarized request for call log
+  const logRequestBody = {
+    model: body.model,
+    prompt: typeof body.prompt === "string" ? body.prompt.slice(0, 200) : String(body.prompt ?? "").slice(0, 200),
+    size: body.size || "default",
+    n: body.n || 1,
+    quality: body.quality || undefined,
+  };
+
   // Build upstream request (OpenAI-compatible format)
   const upstreamBody = {
     model: model,
@@ -178,6 +236,20 @@ async function handleOpenAIImageGeneration({ model, provider, providerConfig, bo
     }
     result = await fetchImageEndpoint(providerConfig.fallbackUrl, headers, requestBody, provider, log);
   }
+
+  // Save call log after result is determined
+  saveCallLog({
+    method: "POST",
+    path: "/v1/images/generations",
+    status: result.status || (result.success ? 200 : 502),
+    model: `${provider}/${model}`,
+    provider,
+    duration: Date.now() - startTime,
+    tokens: { prompt_tokens: 0, completion_tokens: 0 },
+    error: result.success ? null : (typeof result.error === "string" ? result.error.slice(0, 500) : null),
+    requestBody: logRequestBody,
+    responseBody: result.success ? { images_count: result.data?.data?.length || 0 } : null,
+  }).catch(() => {});
 
   return result;
 }

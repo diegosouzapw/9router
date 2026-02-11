@@ -14,6 +14,7 @@
  */
 
 import { getEmbeddingProvider, parseEmbeddingModel } from "../config/embeddingRegistry.js";
+import { saveCallLog } from "@/lib/usageDb.js";
 
 /**
  * Handle embedding request
@@ -24,6 +25,14 @@ import { getEmbeddingProvider, parseEmbeddingModel } from "../config/embeddingRe
  */
 export async function handleEmbedding({ body, credentials, log }) {
   const { provider, model } = parseEmbeddingModel(body.model);
+  const startTime = Date.now();
+
+  // Summarized request body for call log (avoid storing large embedding input arrays)
+  const logRequestBody = {
+    model: body.model,
+    input_count: Array.isArray(body.input) ? body.input.length : 1,
+    dimensions: body.dimensions || undefined,
+  };
 
   if (!provider) {
     return {
@@ -80,6 +89,19 @@ export async function handleEmbedding({ body, credentials, log }) {
       if (log) {
         log.error("EMBED", `${provider} error ${response.status}: ${errorText.slice(0, 200)}`);
       }
+
+      // Save error call log for Logger panel
+      saveCallLog({
+        method: "POST",
+        path: "/v1/embeddings",
+        status: response.status,
+        model: `${provider}/${model}`,
+        provider,
+        duration: Date.now() - startTime,
+        error: errorText.slice(0, 500),
+        requestBody: logRequestBody,
+      }).catch(() => {});
+
       return {
         success: false,
         status: response.status,
@@ -88,6 +110,27 @@ export async function handleEmbedding({ body, credentials, log }) {
     }
 
     const data = await response.json();
+
+    // Save success call log for Logger panel
+    // Embeddings only have input tokens (prompt_tokens + total_tokens), no output/completion tokens
+    saveCallLog({
+      method: "POST",
+      path: "/v1/embeddings",
+      status: 200,
+      model: `${provider}/${model}`,
+      provider,
+      duration: Date.now() - startTime,
+      tokens: {
+        prompt_tokens: data.usage?.prompt_tokens || data.usage?.total_tokens || 0,
+        completion_tokens: 0,
+      },
+      requestBody: logRequestBody,
+      responseBody: {
+        usage: data.usage || null,
+        object: "list",
+        data_count: data.data?.length || 0,
+      },
+    }).catch(() => {});
 
     // Normalize response to OpenAI format
     return {
@@ -103,6 +146,19 @@ export async function handleEmbedding({ body, credentials, log }) {
     if (log) {
       log.error("EMBED", `${provider} fetch error: ${err.message}`);
     }
+
+    // Save exception call log for Logger panel
+    saveCallLog({
+      method: "POST",
+      path: "/v1/embeddings",
+      status: 502,
+      model: `${provider}/${model}`,
+      provider,
+      duration: Date.now() - startTime,
+      error: err.message,
+      requestBody: logRequestBody,
+    }).catch(() => {});
+
     return {
       success: false,
       status: 502,

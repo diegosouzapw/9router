@@ -261,7 +261,9 @@ function ComboCard({ combo, metrics, copied, onCopy, onEdit, onDelete, onDuplica
               <span className={`text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded-full ${
                 strategy === "weighted"
                   ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                  : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                  : strategy === "round-robin"
+                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                    : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
               }`}>
                 {strategy}
               </span>
@@ -571,8 +573,14 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
     };
 
     // Include config only if any values are set
-    if (Object.keys(config).length > 0) {
-      saveData.config = config;
+    const configToSave = { ...config };
+    // Add round-robin specific fields to config
+    if (strategy === "round-robin") {
+      if (config.concurrencyPerModel !== undefined) configToSave.concurrencyPerModel = config.concurrencyPerModel;
+      if (config.queueTimeoutMs !== undefined) configToSave.queueTimeoutMs = config.queueTimeoutMs;
+    }
+    if (Object.keys(configToSave).length > 0) {
+      saveData.config = configToSave;
     }
 
     await onSave(saveData);
@@ -629,11 +637,24 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
                 <span className="material-symbols-outlined text-[14px] align-middle mr-1">percent</span>
                 Weighted
               </button>
+              <button
+                onClick={() => setStrategy("round-robin")}
+                className={`flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all ${
+                  strategy === "round-robin"
+                    ? "bg-white dark:bg-bg-main shadow-sm text-primary"
+                    : "text-text-muted hover:text-text-main"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[14px] align-middle mr-1">autorenew</span>
+                Round-Robin
+              </button>
             </div>
             <p className="text-[10px] text-text-muted mt-0.5">
               {strategy === "priority"
                 ? "Sequential fallback: tries model 1 first, then 2, etc."
-                : "Distributes traffic by weight percentage with fallback"
+                : strategy === "weighted"
+                  ? "Distributes traffic by weight percentage with fallback"
+                  : "Circular distribution: each request goes to the next model in rotation"
               }
             </p>
           </div>
@@ -813,6 +834,35 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
                   />
                 </div>
               </div>
+              {strategy === "round-robin" && (
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-black/5 dark:border-white/5">
+                  <div>
+                    <label className="text-[10px] text-text-muted mb-0.5 block">Concurrency / Model</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={config.concurrencyPerModel ?? ""}
+                      placeholder="3"
+                      onChange={(e) => setConfig({ ...config, concurrencyPerModel: e.target.value ? Number(e.target.value) : undefined })}
+                      className="w-full text-xs py-1.5 px-2 rounded border border-black/10 dark:border-white/10 bg-transparent focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-text-muted mb-0.5 block">Queue Timeout (ms)</label>
+                    <input
+                      type="number"
+                      min="1000"
+                      max="120000"
+                      step="1000"
+                      value={config.queueTimeoutMs ?? ""}
+                      placeholder="30000"
+                      onChange={(e) => setConfig({ ...config, queueTimeoutMs: e.target.value ? Number(e.target.value) : undefined })}
+                      className="w-full text-xs py-1.5 px-2 rounded border border-black/10 dark:border-white/10 bg-transparent focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
               <p className="text-[10px] text-text-muted">
                 Leave empty to use global defaults. These override per-provider settings.
               </p>
