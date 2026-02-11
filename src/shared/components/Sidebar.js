@@ -26,6 +26,11 @@ const systemItems = [
   { href: "/dashboard/profile", label: "Settings", icon: "settings" },
 ];
 
+const helpItems = [
+  { href: "https://github.com/decolua/9router#readme", label: "Docs", icon: "menu_book", external: true },
+  { href: "https://github.com/decolua/9router/issues", label: "Issues", icon: "bug_report", external: true },
+];
+
 export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }) {
   const pathname = usePathname();
   const [showShutdownModal, setShowShutdownModal] = useState(false);
@@ -78,31 +83,54 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
     }, 3000);
   };
 
-  const renderNavLink = (item) => (
-    <Link
-      key={item.href}
-      href={item.href}
-      onClick={onClose}
-      title={collapsed ? item.label : undefined}
-      className={cn(
-        "flex items-center gap-3 rounded-lg transition-all group",
-        collapsed ? "justify-center px-2 py-2.5" : "px-4 py-2",
-        isActive(item.href)
-          ? "bg-primary/10 text-primary"
-          : "text-text-muted hover:bg-surface/50 hover:text-text-main"
-      )}
-    >
-      <span
-        className={cn(
-          "material-symbols-outlined text-[18px]",
-          isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-        )}
+  const renderNavLink = (item) => {
+    const active = !item.external && isActive(item.href);
+    const className = cn(
+      "flex items-center gap-3 rounded-lg transition-all group",
+      collapsed ? "justify-center px-2 py-2.5" : "px-4 py-2",
+      active
+        ? "bg-primary/10 text-primary"
+        : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+    );
+    const iconClassName = cn(
+      "material-symbols-outlined text-[18px]",
+      active ? "fill-1" : "group-hover:text-primary transition-colors"
+    );
+    const content = (
+      <>
+        <span className={iconClassName}>{item.icon}</span>
+        {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
+      </>
+    );
+
+    if (item.external) {
+      return (
+        <a
+          key={item.href}
+          href={item.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={onClose}
+          title={collapsed ? item.label : undefined}
+          className={className}
+        >
+          {content}
+        </a>
+      );
+    }
+
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={onClose}
+        title={collapsed ? item.label : undefined}
+        className={className}
       >
-        {item.icon}
-      </span>
-      {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
-    </Link>
-  );
+        {content}
+      </Link>
+    );
+  };
 
   return (
     <>
@@ -177,6 +205,16 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
             )}
             {collapsed && <div className="border-t border-black/5 dark:border-white/5 mb-2" />}
             {systemItems.map(renderNavLink)}
+          </div>
+
+          <div className="pt-4 mt-2">
+            {!collapsed && (
+              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+                Help
+              </p>
+            )}
+            {collapsed && <div className="border-t border-black/5 dark:border-white/5 mb-2" />}
+            {helpItems.map(renderNavLink)}
           </div>
         </nav>
 

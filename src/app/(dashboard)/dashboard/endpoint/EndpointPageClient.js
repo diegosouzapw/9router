@@ -294,6 +294,12 @@ export default function APIPageClient({ machineId }) {
     { icon: "speed", title: "Global Edge", desc: "Fast worldwide access" },
   ];
 
+  const quickStartLinks = [
+    { label: "Documentation", href: "https://github.com/decolua/9router#readme" },
+    { label: "OpenAI API compatibility", href: "https://github.com/decolua/9router#openai-compatible-endpoints" },
+    { label: "Report issue", href: "https://github.com/decolua/9router/issues" },
+  ];
+
   return (
     <div className="flex flex-col gap-8">
       {/* Endpoint Card */}
@@ -352,6 +358,50 @@ export default function APIPageClient({ machineId }) {
           </Button>
         </div>
 
+      </Card>
+
+      {/* Quick Start */}
+      <Card>
+        <div className="flex flex-col gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">Quick Start</h2>
+            <p className="text-sm text-text-muted">First-time setup checklist for API clients and IDE tools.</p>
+          </div>
+
+          <ol className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <li className="rounded-lg border border-border bg-bg-subtle p-3">
+              <span className="font-semibold">1. Create API key</span>
+              <p className="text-text-muted mt-1">Generate one key per environment to isolate usage and revoke safely.</p>
+            </li>
+            <li className="rounded-lg border border-border bg-bg-subtle p-3">
+              <span className="font-semibold">2. Connect provider account</span>
+              <p className="text-text-muted mt-1">Configure providers in Dashboard and validate with Test Connection.</p>
+            </li>
+            <li className="rounded-lg border border-border bg-bg-subtle p-3">
+              <span className="font-semibold">3. Use endpoint</span>
+              <p className="text-text-muted mt-1">Point clients to <code>{currentEndpoint}</code> and send requests to <code>/chat/completions</code>.</p>
+            </li>
+            <li className="rounded-lg border border-border bg-bg-subtle p-3">
+              <span className="font-semibold">4. Monitor usage</span>
+              <p className="text-text-muted mt-1">Track requests, tokens, errors, and cost in Usage and Request Logger.</p>
+            </li>
+          </ol>
+
+          <div className="flex flex-wrap gap-2">
+            {quickStartLinks.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-text-muted hover:text-text-main hover:bg-bg-subtle transition-colors"
+              >
+                <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </div>
       </Card>
 
       {/* API Keys */}

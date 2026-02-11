@@ -98,6 +98,7 @@ export default function RequestLoggerV2() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState(null);
   const intervalRef = useRef(null);
+  const hasLoadedRef = useRef(false);
 
   const fetchLogs = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -123,15 +124,11 @@ export default function RequestLoggerV2() {
     }
   }, [search, activeFilter, selectedAccount, selectedProvider, selectedApiKey]);
 
-  // Initial load
   useEffect(() => {
-    fetchLogs(true);
-  }, []);
-
-  // Refetch when filters change
-  useEffect(() => {
-    fetchLogs(false);
-  }, [search, activeFilter, selectedAccount, selectedProvider, selectedApiKey]);
+    const showLoading = !hasLoadedRef.current;
+    hasLoadedRef.current = true;
+    fetchLogs(showLoading);
+  }, [fetchLogs]);
 
   // Auto-refresh
   useEffect(() => {

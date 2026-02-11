@@ -7,21 +7,36 @@ const footerLinks = {
   product: [
     { label: "Features", href: "#features" },
     { label: "Pricing", href: "#pricing" },
-    { label: "Changelog", href: "#" },
+    { label: "Changelog", href: "https://github.com/decolua/9router/releases", external: true },
   ],
   resources: [
-    { label: "Documentation", href: "#" },
-    { label: "API Reference", href: "#" },
-    { label: "Help Center", href: "#" },
+    { label: "Documentation", href: "https://github.com/decolua/9router#readme", external: true },
+    { label: "API Reference", href: "https://github.com/decolua/9router#openai-compatible-endpoints", external: true },
+    { label: "Help Center", href: "https://github.com/decolua/9router/discussions", external: true },
   ],
   company: [
-    { label: "About", href: "#" },
-    { label: "Blog", href: "#" },
-    { label: "Contact", href: "#" },
+    { label: "About", href: "https://github.com/decolua/9router", external: true },
+    { label: "Blog", href: "https://github.com/decolua/9router/releases", external: true },
+    { label: "Contact", href: "https://github.com/decolua/9router/issues/new/choose", external: true },
   ],
 };
 
 export default function Footer() {
+  const renderFooterLink = (link) => {
+    if (link.external) {
+      return (
+        <a href={link.href} target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">
+          {link.label}
+        </a>
+      );
+    }
+    return (
+      <Link href={link.href} className="hover:text-primary transition-colors">
+        {link.label}
+      </Link>
+    );
+  };
+
   return (
     <footer className="bg-bg border-t border-border pt-16 pb-12">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -74,9 +89,7 @@ export default function Footer() {
             <ul className="flex flex-col gap-3 text-sm text-text-muted font-light">
               {footerLinks.product.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="hover:text-primary transition-colors">
-                    {link.label}
-                  </Link>
+                  {renderFooterLink(link)}
                 </li>
               ))}
             </ul>
@@ -88,9 +101,7 @@ export default function Footer() {
             <ul className="flex flex-col gap-3 text-sm text-text-muted font-light">
               {footerLinks.resources.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="hover:text-primary transition-colors">
-                    {link.label}
-                  </Link>
+                  {renderFooterLink(link)}
                 </li>
               ))}
             </ul>
@@ -102,9 +113,7 @@ export default function Footer() {
             <ul className="flex flex-col gap-3 text-sm text-text-muted font-light">
               {footerLinks.company.map((link) => (
                 <li key={link.label}>
-                  <Link href={link.href} className="hover:text-primary transition-colors">
-                    {link.label}
-                  </Link>
+                  {renderFooterLink(link)}
                 </li>
               ))}
             </ul>
@@ -117,16 +126,15 @@ export default function Footer() {
             © {new Date().getFullYear()} {APP_CONFIG.name} Inc. All rights reserved.
           </p>
           <div className="flex gap-6 text-sm text-text-muted">
-            <Link href="#" className="hover:text-primary transition-colors">
-              Privacy Policy
-            </Link>
-            <Link href="#" className="hover:text-primary transition-colors">
-              Terms of Service
-            </Link>
+            <a href="https://github.com/decolua/9router#readme" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">
+              Project README
+            </a>
+            <a href="https://github.com/decolua/9router/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">
+              License
+            </a>
           </div>
         </div>
       </div>
     </footer>
   );
 }
-

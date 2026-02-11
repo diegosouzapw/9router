@@ -256,7 +256,7 @@ function DailyTrendChart({ dailyTrend }) {
 
 /** Donut Chart — Account distribution */
 function AccountDonut({ byAccount }) {
-  const data = byAccount || [];
+  const data = useMemo(() => byAccount || [], [byAccount]);
   const total = useMemo(() => data.reduce((s, a) => s + a.totalTokens, 0), [data]);
   const hasData = data.length > 0;
 
@@ -324,7 +324,7 @@ function AccountDonut({ byAccount }) {
 
 /** Donut Chart — API key distribution */
 function ApiKeyDonut({ byApiKey }) {
-  const data = byApiKey || [];
+  const data = useMemo(() => byApiKey || [], [byApiKey]);
   const total = useMemo(() => data.reduce((s, a) => s + a.totalTokens, 0), [data]);
   const hasData = data.length > 0;
 
@@ -394,7 +394,7 @@ function ApiKeyTable({ byApiKey }) {
   const [sortBy, setSortBy] = useState("totalTokens");
   const [sortOrder, setSortOrder] = useState("desc");
 
-  const data = byApiKey || [];
+  const data = useMemo(() => byApiKey || [], [byApiKey]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
