@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName, isCloudEnabled } from "@/lib/localDb";
+import { getComboById, updateCombo, deleteCombo, getComboByName, getCombos, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { validateComboDAG } from "open-sse/services/combo.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_/.-]+$/;
@@ -39,6 +40,23 @@ export async function PUT(request, { params }) {
       const existing = await getComboByName(body.name);
       if (existing && existing.id !== id) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
+      }
+    }
+    
+    // Validate nested combo DAG (no circular references, max depth)
+    if (body.models) {
+      const allCombos = await getCombos();
+      // Update the combo in the list temporarily for validation
+      const updatedCombos = allCombos.map(c => 
+        c.id === id ? { ...c, ...body } : c
+      );
+      const comboName = body.name || (await getComboById(id))?.name;
+      if (comboName) {
+        try {
+          validateComboDAG(comboName, updatedCombos);
+        } catch (dagError) {
+          return NextResponse.json({ error: dagError.message }, { status: 400 });
+        }
       }
     }
     

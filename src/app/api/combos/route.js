@@ -3,6 +3,7 @@ import { getCombos, createCombo, getComboByName, isCloudEnabled } from "@/lib/lo
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
 import { createComboSchema, validateBody } from "@/shared/validation/schemas";
+import { validateComboDAG } from "open-sse/services/combo.js";
 
 // GET /api/combos - Get all combos
 export async function GET() {
@@ -25,7 +26,7 @@ export async function POST(request) {
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-    const { name, models } = validation.data;
+    const { name, models, strategy, config } = validation.data;
 
     // Check if name already exists
     const existing = await getComboByName(name);
@@ -33,7 +34,17 @@ export async function POST(request) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
     }
 
-    const combo = await createCombo({ name, models: models || [] });
+    // Validate nested combo DAG (no circular references, max depth)
+    const allCombos = await getCombos();
+    // Temporarily add the new combo to validate its graph
+    const tempCombo = { name, models: models || [], strategy, config };
+    try {
+      validateComboDAG(name, [...allCombos, tempCombo]);
+    } catch (dagError) {
+      return NextResponse.json({ error: dagError.message }, { status: 400 });
+    }
+
+    const combo = await createCombo({ name, models: models || [], strategy, config });
 
     // Auto sync to Cloud if enabled
     await syncToCloudIfEnabled();
