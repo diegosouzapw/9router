@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Image from "next/image";
-import { parseQuotaData, calculatePercentage } from "./utils";
+import { parseQuotaData, calculatePercentage, normalizePlanTier } from "./utils";
 import Card from "@/shared/components/Card";
+import Badge from "@/shared/components/Badge";
 import { CardSkeleton } from "@/shared/components/Loading";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
@@ -18,6 +19,16 @@ const PROVIDER_CONFIG = {
   codex: { label: "OpenAI Codex", color: "#10A37F" },
   claude: { label: "Claude Code", color: "#D97757" },
 };
+
+const TIER_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "enterprise", label: "Enterprise" },
+  { key: "business", label: "Business" },
+  { key: "ultra", label: "Ultra" },
+  { key: "pro", label: "Pro" },
+  { key: "free", label: "Free" },
+  { key: "unknown", label: "Unknown" },
+];
 
 // Short model display names for quota bars
 function getShortModelName(name) {
@@ -75,6 +86,7 @@ export default function ProviderLimits() {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(120);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [tierFilter, setTierFilter] = useState("all");
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -208,14 +220,47 @@ export default function ProviderLimits() {
     return () => document.removeEventListener("visibilitychange", handler);
   }, [autoRefresh, refreshAll]);
 
-  const filteredConnections = connections.filter(
-    (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+  const filteredConnections = useMemo(
+    () => connections.filter(
+      (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+    ),
+    [connections]
   );
 
-  const sortedConnections = [...filteredConnections].sort((a, b) => {
+  const sortedConnections = useMemo(() => {
     const priority = { antigravity: 1, github: 2, codex: 3, claude: 4, kiro: 5 };
-    return (priority[a.provider] || 9) - (priority[b.provider] || 9);
-  });
+    return [...filteredConnections].sort((a, b) => (priority[a.provider] || 9) - (priority[b.provider] || 9));
+  }, [filteredConnections]);
+
+  const tierByConnection = useMemo(() => {
+    const out = {};
+    for (const conn of sortedConnections) {
+      out[conn.id] = normalizePlanTier(quotaData[conn.id]?.plan);
+    }
+    return out;
+  }, [sortedConnections, quotaData]);
+
+  const tierCounts = useMemo(() => {
+    const counts = {
+      all: sortedConnections.length,
+      enterprise: 0,
+      business: 0,
+      ultra: 0,
+      pro: 0,
+      free: 0,
+      unknown: 0,
+    };
+    for (const conn of sortedConnections) {
+      const tierKey = tierByConnection[conn.id]?.key || "unknown";
+      counts[tierKey] = (counts[tierKey] || 0) + 1;
+    }
+    return counts;
+  }, [sortedConnections, tierByConnection]);
+
+  const visibleConnections = useMemo(() => {
+    if (tierFilter === "all") return sortedConnections;
+    return sortedConnections.filter((conn) => (tierByConnection[conn.id]?.key || "unknown") === tierFilter);
+  }, [sortedConnections, tierByConnection, tierFilter]);
 
   if (initialLoading) {
     return (
@@ -251,7 +296,10 @@ export default function ProviderLimits() {
             Provider Limits
           </h2>
           <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
-            {sortedConnections.length} account{sortedConnections.length !== 1 ? "s" : ""}
+            {visibleConnections.length} account{visibleConnections.length !== 1 ? "s" : ""}
+            {visibleConnections.length !== sortedConnections.length
+              ? ` (filtered from ${sortedConnections.length})`
+              : ""}
           </span>
         </div>
 
@@ -298,6 +346,36 @@ export default function ProviderLimits() {
         </div>
       </div>
 
+      {/* Tier Filters */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {TIER_FILTERS.map((tier) => {
+          if (tier.key !== "all" && !tierCounts[tier.key]) return null;
+          const active = tierFilter === tier.key;
+          return (
+            <button
+              key={tier.key}
+              onClick={() => setTierFilter(tier.key)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 10px",
+                borderRadius: 9999,
+                border: active ? "1px solid var(--primary, #f97815)" : "1px solid rgba(255,255,255,0.12)",
+                background: active ? "rgba(249,120,21,0.14)" : "transparent",
+                color: active ? "var(--primary, #f97815)" : "var(--text-muted)",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              <span>{tier.label}</span>
+              <span style={{ opacity: 0.85 }}>{tierCounts[tier.key] || 0}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Account rows */}
       <div style={{
         borderRadius: 12,
@@ -324,11 +402,12 @@ export default function ProviderLimits() {
           <div style={{ textAlign: "center" }}>Actions</div>
         </div>
 
-        {sortedConnections.map((conn, idx) => {
+        {visibleConnections.map((conn, idx) => {
           const quota = quotaData[conn.id];
           const isLoading = loading[conn.id];
           const error = errors[conn.id];
           const config = PROVIDER_CONFIG[conn.provider] || { label: conn.provider, color: "#666" };
+          const tierMeta = tierByConnection[conn.id] || normalizePlanTier(null);
 
           return (
             <div
@@ -338,7 +417,7 @@ export default function ProviderLimits() {
                 gridTemplateColumns: "280px 1fr 100px 48px",
                 alignItems: "center",
                 padding: "14px 16px",
-                borderBottom: idx < sortedConnections.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                borderBottom: idx < visibleConnections.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
                 transition: "background 0.15s",
               }}
               onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
@@ -367,17 +446,12 @@ export default function ProviderLimits() {
                     {conn.name || config.label}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                    {quota?.plan && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-                        padding: "1px 6px", borderRadius: 4,
-                        background: config.color + "33",
-                        color: config.color,
-                        letterSpacing: "0.03em",
-                      }}>
-                        {quota.plan}
-                      </span>
-                    )}
+                    <span title={quota?.plan ? `Raw plan: ${quota.plan}` : "No plan from provider"}>
+                      <Badge variant={tierMeta.variant} size="sm" dot>
+                        {tierMeta.label}
+                      </Badge>
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{config.label}</span>
                   </div>
                 </div>
               </div>
@@ -492,6 +566,12 @@ export default function ProviderLimits() {
             </div>
           );
         })}
+
+        {visibleConnections.length === 0 && (
+          <div style={{ padding: "26px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+            No accounts found for tier filter <strong>{TIER_FILTERS.find((t) => t.key === tierFilter)?.label || tierFilter}</strong>.
+          </div>
+        )}
       </div>
     </div>
   );
