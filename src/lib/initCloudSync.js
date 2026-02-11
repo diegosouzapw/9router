@@ -1,4 +1,5 @@
 import initializeCloudSync from "@/shared/services/initializeCloudSync";
+import "@/lib/tokenHealthCheck"; // Proactive token health-check scheduler
 
 // Initialize cloud sync when this module is imported
 let initialized = false;
