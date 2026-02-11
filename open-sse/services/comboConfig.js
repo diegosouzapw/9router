@@ -10,6 +10,8 @@ const DEFAULT_COMBO_CONFIG = {
   maxRetries: 1,
   retryDelayMs: 2000,
   timeoutMs: 120000,
+  concurrencyPerModel: 3,     // max simultaneous requests per model (round-robin)
+  queueTimeoutMs: 30000,      // max wait time in semaphore queue (round-robin)
   healthCheckEnabled: true,
   healthCheckTimeoutMs: 3000,
   maxComboDepth: 3,

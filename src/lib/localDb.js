@@ -139,6 +139,12 @@ function ensureDbShape(data) {
 
 let mutexPromise = Promise.resolve();
 
+// Guard flag: when true, getDb() skips await dbInstance.read() because the
+// write lock already guarantees in-memory consistency.  This prevents the
+// ENOENT race condition where LowDB's atomic rename of .db.json.tmp → db.json
+// collides with a concurrent read triggered by a queued write-lock callback.
+let _insideWriteLock = false;
+
 /**
  * Execute a function with exclusive access to the database (Read-Modify-Write cycle).
  * @param {Function} callback - Async function that gets exclusive access
@@ -147,11 +153,14 @@ let mutexPromise = Promise.resolve();
 async function withWriteLock(callback) {
   // Enqueue the callback
   const resultPromise = mutexPromise.then(async () => {
+    _insideWriteLock = true;
     try {
       return await callback();
     } catch (error) {
       console.error("[DB] Write lock error:", error);
       throw error;
+    } finally {
+      _insideWriteLock = false;
     }
   });
 
@@ -194,17 +203,22 @@ export async function getDb() {
     dbInstance = new Low(adapter, cloneDefaultData());
   }
 
-  // Always read latest disk state to avoid stale singleton data across route workers.
-  try {
-    await dbInstance.read();
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      console.warn('[DB] Corrupt JSON detected — creating backup before reset...');
-      backupDbFile('corrupt');
-      dbInstance.data = cloneDefaultData();
-      await dbInstance.write();
-    } else {
-      throw error;
+  // Skip disk read when called from inside withWriteLock — the mutex already
+  // guarantees in-memory consistency andthe disk re-read causes ENOENT race
+  // conditions with LowDB's atomic .tmp → .json rename.
+  if (!_insideWriteLock) {
+    // Read latest disk state for non-locked reads (API GET routes, etc.)
+    try {
+      await dbInstance.read();
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        console.warn('[DB] Corrupt JSON detected — creating backup before reset...');
+        backupDbFile('corrupt');
+        dbInstance.data = cloneDefaultData();
+        await dbInstance.write();
+      } else {
+        throw error;
+      }
     }
   }
 
