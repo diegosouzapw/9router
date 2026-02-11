@@ -124,7 +124,7 @@ export async function withRateLimit(provider, connectionId, model, fn) {
   }
 
   const limiter = getLimiter(provider, connectionId, null);
-  return limiter.schedule({ id: `${provider}/${model}` }, fn);
+  return limiter.schedule(fn);
 }
 
 // ─── Header Parsing ──────────────────────────────────────────────────────────
