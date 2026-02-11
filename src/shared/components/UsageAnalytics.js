@@ -120,7 +120,7 @@ function ActivityHeatmap({ activityMap }) {
   }
 
   return (
-    <Card className="p-4">
+    <Card className="p-4 h-full">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">Activity</h3>
         <span className="text-xs text-text-muted">
@@ -356,7 +356,7 @@ function MostActiveDay7d({ activityMap }) {
   }, [activityMap]);
 
   return (
-    <Card className="p-4 flex flex-col justify-center" style={{ minHeight: 0 }}>
+    <Card className="p-4 flex flex-col justify-center" style={{ flex: 1, minHeight: 0 }}>
       <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-muted)" }}>Most Active Day</h3>
       {data ? (
         <>
@@ -401,21 +401,20 @@ function WeeklySquares7d({ activityMap }) {
   }
 
   return (
-    <Card className="p-4 flex flex-col justify-center" style={{ minHeight: 0 }}>
+    <Card className="p-4 flex flex-col justify-center" style={{ flex: 1, minHeight: 0 }}>
       <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>Weekly</h3>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, justifyContent: "center" }}>
         {days.map((d, i) => (
-          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: 1 }}>
+          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
             <div
               title={`${d.key}: ${fmtFull(d.val)} tokens`}
               style={{
-                width: "100%",
-                aspectRatio: "1",
+                width: 36,
+                height: 36,
                 borderRadius: 8,
                 ...getSquareStyle(d.intensity),
                 transition: "all 0.2s",
                 cursor: "default",
-                maxWidth: 48,
               }}
             />
             <span style={{ fontSize: 9, fontWeight: 600, color: "var(--text-muted)", letterSpacing: "0.03em" }}>{d.label}</span>
@@ -616,10 +615,8 @@ export default function UsageAnalytics() {
       </div>
 
       {/* Activity Heatmap + Weekly Widgets */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-        <div style={{ gridColumn: "span 2" }}>
-          <ActivityHeatmap activityMap={analytics?.activityMap} />
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, alignItems: "stretch" }}>
+        <ActivityHeatmap activityMap={analytics?.activityMap} />
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <MostActiveDay7d activityMap={analytics?.activityMap} />
           <WeeklySquares7d activityMap={analytics?.activityMap} />
