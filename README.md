@@ -639,7 +639,6 @@ docker run -d \
   -p 20128:20128 \
   --env-file ./.env \
   -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
   9router:cli
 ```
 
@@ -676,7 +675,6 @@ docker run -d \
   -v ~/.cursor:/host-home/.cursor:rw \
   -v ~/.config/cursor:/host-home/.config/cursor:rw \
   -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
   9router:base
 ```
 
@@ -719,7 +717,8 @@ docker stop 9router && docker rm 9router
 | ---------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
 | `JWT_SECRET`                                         | `9router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**)             |
 | `INITIAL_PASSWORD`                                   | `123456`                           | First login password when no saved hash exists                                      |
-| `DATA_DIR`                                           | `~/.9router`                       | Main app database location (`db.json`)                                              |
+| `DATA_DIR`                                           | `~/.9router`                       | Primary data directory (`db.json`, `usage.json`, `log.txt`, `call_logs/`)           |
+| `XDG_CONFIG_HOME`                                    | unset                              | Optional base dir on Linux/macOS when `DATA_DIR` is unset (`$XDG_CONFIG_HOME/9router`) |
 | `PORT`                                               | framework default                  | Service port (`20128` in examples)                                                  |
 | `HOSTNAME`                                           | framework default                  | Bind host (Docker defaults to `0.0.0.0`)                                            |
 | `NODE_ENV`                                           | runtime default                    | Set `production` for deploy                                                         |
@@ -732,6 +731,7 @@ docker stop 9router && docker rm 9router
 | `ENABLE_REQUEST_LOGS`                                | `false`                            | Enables request/response logs under `logs/`                                         |
 | `AUTH_COOKIE_SECURE`                                 | `false`                            | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy)                  |
 | `REQUIRE_API_KEY`                                    | `false`                            | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
+| `ALLOW_MULTI_CONNECTIONS_PER_COMPAT_NODE`            | `false`                            | Allow multiple connections for each OpenAI/Anthropic-compatible custom node           |
 | `CLI_MODE`                                           | `auto`                             | CLI runtime profile: `auto`, `host`, or `container`                                 |
 | `CLI_EXTRA_PATHS`                                    | empty                              | Extra `PATH` entries used for CLI detection/healthcheck (split by `:` on Linux)     |
 | `CLI_CONFIG_HOME`                                    | runtime home (`os.homedir`)        | Base directory used to read/write CLI config files                                  |
@@ -757,9 +757,9 @@ Notes:
 ### Runtime Files and Storage
 
 - Main app state: `${DATA_DIR}/db.json` (providers, combos, aliases, keys, settings), managed by `src/lib/localDb.js`.
-- Usage history and logs: `~/.9router/usage.json` and `~/.9router/log.txt`, managed by `src/lib/usageDb.js`.
+- Usage history and logs: `${DATA_DIR}/usage.json`, `${DATA_DIR}/log.txt`, `${DATA_DIR}/call_logs/`, managed by `src/lib/usageDb.js`.
 - Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`.
-- Usage storage currently follows `~/.9router` path logic and is independent from `DATA_DIR`.
+- Legacy files under `~/.9router` are migrated automatically when `DATA_DIR` (or `XDG_CONFIG_HOME`) points to a different location.
 
 </details>
 

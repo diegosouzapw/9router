@@ -1,4 +1,4 @@
-import { PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { PROVIDER_ID_TO_ALIAS, PROVIDER_MODELS } from "../config/providerModels.js";
 
 // Derive alias→provider mapping from the single source of truth (PROVIDER_ID_TO_ALIAS)
 // This prevents the two maps from drifting out of sync
@@ -10,11 +10,51 @@ for (const [id, alias] of Object.entries(PROVIDER_ID_TO_ALIAS)) {
   ALIAS_TO_PROVIDER_ID[alias] = id;
 }
 
+// Provider-scoped legacy model aliases. Used to normalize provider/model inputs
+// and keep backward compatibility when upstream IDs change.
+const PROVIDER_MODEL_ALIASES = {
+  github: {
+    "claude-4.5-opus": "claude-opus-4-5-20251101",
+    "claude-opus-4.5": "claude-opus-4-5-20251101",
+    "gemini-3-pro": "gemini-3-pro-preview",
+    "gemini-3-flash": "gemini-3-flash-preview",
+    "raptor-mini": "oswe-vscode-prime",
+  },
+  antigravity: {
+    "gemini-3-flash": "gemini-3-flash-preview",
+  },
+};
+
+// Reverse index: modelId -> providerIds that expose this model
+const MODEL_TO_PROVIDERS = new Map();
+for (const [aliasOrId, models] of Object.entries(PROVIDER_MODELS)) {
+  const providerId = ALIAS_TO_PROVIDER_ID[aliasOrId] || aliasOrId;
+  for (const modelEntry of models || []) {
+    const modelId = modelEntry?.id;
+    if (!modelId) continue;
+    const providers = MODEL_TO_PROVIDERS.get(modelId) || [];
+    if (!providers.includes(providerId)) {
+      providers.push(providerId);
+      MODEL_TO_PROVIDERS.set(modelId, providers);
+    }
+  }
+}
+
 /**
  * Resolve provider alias to provider ID
  */
 export function resolveProviderAlias(aliasOrId) {
   return ALIAS_TO_PROVIDER_ID[aliasOrId] || aliasOrId;
+}
+
+/**
+ * Resolve provider-specific legacy model alias to canonical model ID.
+ */
+function resolveProviderModelAlias(providerOrAlias, modelId) {
+  if (!modelId || typeof modelId !== "string") return modelId;
+  const providerId = resolveProviderAlias(providerOrAlias);
+  const aliases = PROVIDER_MODEL_ALIASES[providerId];
+  return aliases?.[modelId] || modelId;
 }
 
 /**
@@ -85,9 +125,10 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
+    const canonicalModel = resolveProviderModelAlias(parsed.provider, parsed.model);
     return {
       provider: parsed.provider,
-      model: parsed.model,
+      model: canonicalModel,
     };
   }
 
@@ -99,13 +140,49 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
   // Resolve alias
   const resolved = resolveModelAliasFromMap(parsed.model, aliases);
   if (resolved) {
-    return resolved;
+    const canonicalModel = resolveProviderModelAlias(resolved.provider, resolved.model);
+    return {
+      provider: resolved.provider,
+      model: canonicalModel,
+    };
+  }
+
+  const modelId = parsed.model;
+  const providers = MODEL_TO_PROVIDERS.get(modelId) || [];
+
+  // Preserve historical behavior: OpenAI stays default when model exists there
+  if (providers.includes("openai")) {
+    return {
+      provider: "openai",
+      model: modelId,
+    };
+  }
+
+  const nonOpenAIProviders = providers.filter(p => p !== "openai");
+  if (nonOpenAIProviders.length === 1) {
+    const provider = nonOpenAIProviders[0];
+    const canonicalModel = resolveProviderModelAlias(provider, modelId);
+    return { provider, model: canonicalModel };
+  }
+
+  if (nonOpenAIProviders.length > 1) {
+    const aliasesForHint = nonOpenAIProviders.map(p => PROVIDER_ID_TO_ALIAS[p] || p);
+    const hints = aliasesForHint.slice(0, 2).map(alias => `${alias}/${modelId}`);
+    const message = `Ambiguous model '${modelId}'. Use provider/model prefix (ex: ${hints.join(" or ")}).`;
+    console.warn(`[MODEL] ${message} Candidates: ${aliasesForHint.join(", ")}`);
+    return {
+      provider: null,
+      model: modelId,
+      errorType: "ambiguous_model",
+      errorMessage: message,
+      candidateProviders: nonOpenAIProviders,
+      candidateAliases: aliasesForHint,
+    };
   }
 
   // Fallback: treat as openai model
   return {
     provider: "openai",
-    model: parsed.model
+    model: modelId
   };
 }
-

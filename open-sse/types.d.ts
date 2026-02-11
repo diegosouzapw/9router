@@ -66,6 +66,8 @@ export interface ChatCoreParams {
   clientRawRequest?: Record<string, unknown>;
   /** Connection ID for usage tracking */
   connectionId: string;
+  /** API key metadata for usage attribution */
+  apiKeyInfo?: { id?: string; name?: string } | null;
   /** Client User-Agent header */
   userAgent?: string;
   /** Callback when credentials are refreshed mid-request */

@@ -35,8 +35,9 @@ export async function POST(request) {
 
     if (isValid) {
       const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";
-      const forwardedProto = request.headers.get("x-forwarded-proto");
-      const isHttpsRequest = forwardedProto === "https";
+      const forwardedProtoHeader = request.headers.get("x-forwarded-proto") || "";
+      const forwardedProto = forwardedProtoHeader.split(",")[0].trim().toLowerCase();
+      const isHttpsRequest = forwardedProto === "https" || request.nextUrl?.protocol === "https:";
       const useSecureCookie = forceSecureCookie || isHttpsRequest;
 
       const token = await new SignJWT({ authenticated: true })

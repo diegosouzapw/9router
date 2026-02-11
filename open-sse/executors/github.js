@@ -1,5 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
+import { getModelTargetFormat } from "../config/providerModels.js";
 
 export class GithubExecutor extends BaseExecutor {
   constructor() {
@@ -7,6 +8,12 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   buildUrl(model, stream, urlIndex = 0) {
+    const targetFormat = getModelTargetFormat("gh", model);
+    if (targetFormat === "openai-responses") {
+      return this.config.responsesBaseUrl
+        || this.config.baseUrl?.replace(/\/chat\/completions\/?$/, "/responses")
+        || "https://api.githubcopilot.com/responses";
+    }
     return this.config.baseUrl;
   }
 

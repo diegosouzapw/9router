@@ -2,8 +2,8 @@ import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import { v4 as uuidv4 } from "uuid";
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
+import { resolveDataDir, getLegacyDotDataDir, isSamePath } from "./dataPaths.js";
 
 // Detect Cloudflare Workers / edge runtime.
 // Workers expose a `caches` global (CacheStorage). In Node.js this is undefined.
@@ -15,37 +15,44 @@ const isCloud =
 // overwriting the production database with empty defaults.
 const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
 
-// Get app name - fixed constant to avoid Windows path issues in standalone build
-function getAppName() {
-  return "9router";
-}
-
-// Get user data directory based on platform
-function getUserDataDir() {
-  if (isCloud) return "/tmp"; // Fallback for Workers
-
-  if (process.env.DATA_DIR) return process.env.DATA_DIR;
-
-  const platform = process.platform;
-  const homeDir = os.homedir();
-  const appName = getAppName();
-
-  if (platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(homeDir, "AppData", "Roaming"), appName);
-  } else {
-    // macOS & Linux: ~/.{appName}
-    return path.join(homeDir, `.${appName}`);
-  }
-}
-
 // Data file path - stored in user home directory
-const DATA_DIR = getUserDataDir();
+const DATA_DIR = resolveDataDir({ isCloud });
+const LEGACY_DATA_DIR = isCloud ? null : getLegacyDotDataDir();
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "db.json");
+const LEGACY_DB_FILE = isCloud || !LEGACY_DATA_DIR ? null : path.join(LEGACY_DATA_DIR, "db.json");
+const DB_BACKUPS_DIR = isCloud ? null : path.join(DATA_DIR, "db_backups");
+const LEGACY_DB_BACKUPS_DIR = isCloud || !LEGACY_DATA_DIR ? null : path.join(LEGACY_DATA_DIR, "db_backups");
 
 // Ensure data directory exists
 if (!isCloud && !fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+
+function migrateLegacyDbFiles() {
+  if (isCloud || isBuildPhase || !LEGACY_DATA_DIR) return;
+  if (isSamePath(DATA_DIR, LEGACY_DATA_DIR)) return;
+
+  try {
+    if (LEGACY_DB_FILE && fs.existsSync(LEGACY_DB_FILE) && DB_FILE && !fs.existsSync(DB_FILE)) {
+      fs.copyFileSync(LEGACY_DB_FILE, DB_FILE);
+      console.log(`[DB] Migrated legacy db.json: ${LEGACY_DB_FILE} -> ${DB_FILE}`);
+    }
+
+    if (
+      LEGACY_DB_BACKUPS_DIR &&
+      DB_BACKUPS_DIR &&
+      fs.existsSync(LEGACY_DB_BACKUPS_DIR) &&
+      !fs.existsSync(DB_BACKUPS_DIR)
+    ) {
+      fs.cpSync(LEGACY_DB_BACKUPS_DIR, DB_BACKUPS_DIR, { recursive: true });
+      console.log(`[DB] Migrated legacy backups: ${LEGACY_DB_BACKUPS_DIR} -> ${DB_BACKUPS_DIR}`);
+    }
+  } catch (error) {
+    console.error("[DB] Legacy migration failed:", error.message);
+  }
+}
+
+migrateLegacyDbFiles();
 
 // Default data structure
 const defaultData = {
@@ -77,7 +84,7 @@ function backupDbFile(reason = "auto") {
     const stat = fs.statSync(DB_FILE);
     // Only backup if file has meaningful content (not just defaults)
     if (stat.size <= 300) return;
-    const backupDir = path.join(DATA_DIR, "db_backups");
+    const backupDir = DB_BACKUPS_DIR || path.join(DATA_DIR, "db_backups");
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const backupFile = path.join(backupDir, `db_${timestamp}_${reason}.json`);
@@ -744,6 +751,18 @@ export async function validateApiKey(key) {
   return db.data.apiKeys.some(k => k.key === key);
 }
 
+export async function getApiKeyMetadata(key) {
+  if (!key) return null;
+  const db = await getDb();
+  const apiKey = (db.data.apiKeys || []).find((k) => k.key === key);
+  if (!apiKey) return null;
+  return {
+    id: apiKey.id,
+    name: apiKey.name,
+    machineId: apiKey.machineId,
+  };
+}
+
 // ============ Data Cleanup ============
 
 export async function cleanupProviderConnections() {
@@ -1047,5 +1066,3 @@ export async function setProxyConfig(config) {
     return db.data.proxyConfig;
   });
 }
-
-

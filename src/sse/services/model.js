@@ -34,10 +34,7 @@ export async function getModelInfo(modelStr) {
         return { provider: matchedAnthropic.id, model: parsed.model };
       }
     }
-    return {
-      provider: parsed.provider,
-      model: parsed.model
-    };
+    return getModelInfoCore(modelStr, null);
   }
 
   return getModelInfoCore(modelStr, getModelAliases);
