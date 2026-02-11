@@ -37,8 +37,14 @@ function buildAnthropicCompatibleUrl(baseUrl) {
 
 // Detect request format from body structure
 export function detectFormat(body) {
-  // OpenAI Responses API: has input[] array instead of messages[]
-  if (body.input && Array.isArray(body.input)) {
+  // OpenAI Responses API:
+  // - input can be string, array, or object (not only array)
+  // - some clients send responses-specific fields even when input is omitted
+  const hasInputField = Object.prototype.hasOwnProperty.call(body, "input") && body.input !== undefined;
+  const hasResponsesSpecificFields = body.max_output_tokens !== undefined
+    || body.previous_response_id !== undefined
+    || body.reasoning !== undefined;
+  if (hasInputField || hasResponsesSpecificFields) {
     return "openai-responses";
   }
 

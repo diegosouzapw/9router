@@ -12,9 +12,20 @@ export class CodexExecutor extends BaseExecutor {
   }
 
   /**
+   * Codex Responses endpoint is SSE-first.
+   * Always request event-stream from upstream, even when client requested stream=false.
+   */
+  buildHeaders(credentials, stream = true) {
+    return super.buildHeaders(credentials, true);
+  }
+
+  /**
    * Transform request before sending - inject default instructions if missing
    */
   transformRequest(model, body, stream, credentials) {
+    // Codex /responses rejects stream=false; we aggregate SSE back to JSON when needed.
+    body.stream = true;
+
     // If no instructions provided, inject default Codex instructions
     if (!body.instructions || body.instructions.trim() === "") {
       body.instructions = CODEX_DEFAULT_INSTRUCTIONS;

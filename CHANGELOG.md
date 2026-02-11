@@ -25,6 +25,10 @@
   - `ALLOW_MULTI_CONNECTIONS_PER_COMPAT_NODE=true` allows multiple connections per OpenAI/Anthropic-compatible node.
 - Improved LAN/reverse-proxy cookie security detection in login route (`x-forwarded-proto` parsing + protocol fallback).
 - Hardened Antigravity request normalization for Gemini 3 Flash by dropping empty `contents` after `thought` filtering and adding preview-model compatibility mapping.
+- Hardened non-stream fallback parsing when upstream returns SSE unexpectedly:
+  - non-stream responses now detect SSE by header/content and parse accordingly.
+  - uses Responses SSE parsing for `openai-responses` targets to avoid `JSON.parse` crashes.
+  - fixes `stream=false` stability for Codex chat compatibility paths.
 
 # v0.2.74 (2026-02-11)
 

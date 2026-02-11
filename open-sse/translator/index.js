@@ -20,6 +20,59 @@ function getResponseRegistry() {
   return responseRegistry;
 }
 
+function normalizeResponsesInputItem(item) {
+  if (typeof item === "string") {
+    return {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: item }]
+    };
+  }
+
+  if (!item || typeof item !== "object") return item;
+
+  if (item.type || item.role) {
+    return item.type ? item : { type: "message", ...item };
+  }
+
+  if (typeof item.text === "string") {
+    return {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: item.text }]
+    };
+  }
+
+  return item;
+}
+
+function normalizeOpenAIResponsesRequest(body) {
+  if (!body || typeof body !== "object") return body;
+
+  const normalized = { ...body };
+
+  if (typeof normalized.input === "string") {
+    normalized.input = [{
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: normalized.input }]
+    }];
+    return normalized;
+  }
+
+  if (Array.isArray(normalized.input)) {
+    normalized.input = normalized.input.map(normalizeResponsesInputItem);
+    return normalized;
+  }
+
+  if (normalized.input && typeof normalized.input === "object") {
+    normalized.input = [normalizeResponsesInputItem(normalized.input)];
+    return normalized;
+  }
+
+  return normalized;
+}
+
 // Register translator (called by each translator module on import)
 export function register(from, to, requestFn, responseFn) {
   const key = `${from}:${to}`;
@@ -103,6 +156,11 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Final step: prepare request for Claude format endpoints
   if (targetFormat === FORMATS.CLAUDE) {
     result = prepareClaudeRequest(result, provider);
+  }
+
+  // Normalize openai-responses input shape for providers that require list input.
+  if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+    result = normalizeOpenAIResponsesRequest(result);
   }
 
   return result;

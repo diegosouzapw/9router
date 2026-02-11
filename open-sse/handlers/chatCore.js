@@ -14,7 +14,7 @@ import { saveRequestUsage, trackPendingRequest, appendRequestLog, saveCallLog } 
 import { getExecutor } from "../executors/index.js";
 import { translateNonStreamingResponse } from "./responseTranslator.js";
 import { extractUsageFromResponse } from "./usageExtractor.js";
-import { parseSSEToOpenAIResponse } from "./sseParser.js";
+import { parseSSEToOpenAIResponse, parseSSEToResponsesOutput } from "./sseParser.js";
 import { withRateLimit, updateFromHeaders, initializeRateLimits } from "../services/rateLimitManager.js";
 
 
@@ -40,6 +40,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   await initializeRateLimits();
 
   const sourceFormat = detectFormat(body);
+  const endpointPath = (clientRawRequest?.endpoint || "").toLowerCase();
+  const isResponsesEndpoint = endpointPath.endsWith("/responses");
 
   // Check for bypass patterns (warmup, skip) - return fake response
   const bypassResponse = handleBypassRequest(body, model, userAgent);
@@ -261,20 +263,30 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Non-streaming response
   if (!stream) {
     trackPendingRequest(model, provider, connectionId, false);
-    const contentType = providerResponse.headers.get("content-type") || "";
+    const contentType = (providerResponse.headers.get("content-type") || "").toLowerCase();
     let responseBody;
+    const rawBody = await providerResponse.text();
+    const looksLikeSSE = contentType.includes("text/event-stream") || /(^|\n)\s*(event|data):/m.test(rawBody);
 
-    if (contentType.includes("text/event-stream")) {
+    if (looksLikeSSE) {
       // Upstream returned SSE even though stream=false; convert best-effort to JSON.
-      const sseText = await providerResponse.text();
-      const parsedFromSSE = parseSSEToOpenAIResponse(sseText, model);
+      const parsedFromSSE = targetFormat === FORMATS.OPENAI_RESPONSES
+        ? parseSSEToResponsesOutput(rawBody, model)
+        : parseSSEToOpenAIResponse(rawBody, model);
+
       if (!parsedFromSSE) {
         appendRequestLog({ model, provider, connectionId, status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
       }
+
       responseBody = parsedFromSSE;
     } else {
-      responseBody = await providerResponse.json();
+      try {
+        responseBody = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        appendRequestLog({ model, provider, connectionId, status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid JSON response from provider");
+      }
     }
 
     // Notify success - caller can clear error status if needed
@@ -391,7 +403,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // UNLESS client is Droid CLI which expects openai-responses format back
   const isDroidCLI = userAgent?.toLowerCase().includes('droid') || userAgent?.toLowerCase().includes('codex-cli');
   const needsCodexTranslation = provider === 'codex'
-    && targetFormat === 'openai-responses'
+    && targetFormat === FORMATS.OPENAI_RESPONSES
+    && sourceFormat === FORMATS.OPENAI
+    && !isResponsesEndpoint
     && !isDroidCLI;
 
   if (needsCodexTranslation) {

@@ -72,3 +72,54 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
 
   return result;
 }
+
+/**
+ * Convert Responses API SSE events into a single non-streaming response object.
+ * Expects events such as response.created / response.in_progress / response.completed.
+ */
+export function parseSSEToResponsesOutput(rawSSE, fallbackModel) {
+  const lines = String(rawSSE || "").split("\n");
+  const events = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    try {
+      events.push(JSON.parse(payload));
+    } catch {
+      // Ignore malformed lines and continue best-effort parsing.
+    }
+  }
+
+  if (events.length === 0) return null;
+
+  let completed = null;
+  let latestResponse = null;
+
+  for (const evt of events) {
+    if (evt?.type === "response.completed" && evt.response) {
+      completed = evt.response;
+    }
+    if (evt?.response && typeof evt.response === "object") {
+      latestResponse = evt.response;
+    } else if (evt?.object === "response") {
+      latestResponse = evt;
+    }
+  }
+
+  const picked = completed || latestResponse;
+  if (!picked || typeof picked !== "object") return null;
+
+  return {
+    id: picked.id || `resp_${Date.now()}`,
+    object: "response",
+    model: picked.model || fallbackModel || "unknown",
+    output: Array.isArray(picked.output) ? picked.output : [],
+    usage: picked.usage || null,
+    status: picked.status || (completed ? "completed" : "in_progress"),
+    created_at: picked.created_at || Math.floor(Date.now() / 1000),
+    metadata: picked.metadata || {},
+  };
+}
