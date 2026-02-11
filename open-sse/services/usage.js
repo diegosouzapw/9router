@@ -213,35 +213,47 @@ const _antigravitySubCache = new Map();
 const ANTIGRAVITY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Map raw loadCodeAssist tier names to short display labels.
- * The API may return full names like "INDIVIDUAL", "GCA_TIER_INDIVIDUAL",
- * "GCA_TIER_BUSINESS_STANDARD", etc.
+ * Map raw loadCodeAssist tier data to short display labels.
+ * Priority: currentTier.id → currentTier.name → upgradeSubscriptionType → fallback.
+ * The API returns currentTier.name as "Antigravity" even for free-tier,
+ * so we rely on currentTier.id (e.g. "free-tier", "pro-tier") for classification.
  */
 function getAntigravityPlanLabel(subscriptionInfo) {
-  if (!subscriptionInfo) return "Unknown";
+  if (!subscriptionInfo || Object.keys(subscriptionInfo).length === 0) return "Free";
 
-  // Try currentTier.name first, fall back to other fields
+  // 1. Check currentTier.id first (most reliable: "free-tier", "pro-tier", "ultra-tier", etc.)
+  const tierId = (subscriptionInfo.currentTier?.id || "").toUpperCase();
+  if (tierId) {
+    if (tierId.includes("ULTRA")) return "Ultra";
+    if (tierId.includes("PRO")) return "Pro";
+    if (tierId.includes("ENTERPRISE")) return "Enterprise";
+    if (tierId.includes("BUSINESS") || tierId.includes("STANDARD")) return "Business";
+    if (tierId.includes("FREE") || tierId.includes("INDIVIDUAL")) return "Free";
+  }
+
+  // 2. Check currentTier.name / displayName / subscriptionType / tier
   const tierName = subscriptionInfo.currentTier?.name
     || subscriptionInfo.currentTier?.displayName
     || subscriptionInfo.subscriptionType
     || subscriptionInfo.tier
     || "";
-
   const upper = tierName.toUpperCase();
 
-  // Map known tier patterns to short labels
   if (upper.includes("ULTRA")) return "Ultra";
   if (upper.includes("PRO")) return "Pro";
   if (upper.includes("ENTERPRISE")) return "Enterprise";
   if (upper.includes("STANDARD") || upper.includes("BUSINESS")) return "Business";
-  if (upper.includes("INDIVIDUAL") || upper.includes("FREE")) return "Individual";
+  if (upper.includes("INDIVIDUAL") || upper.includes("FREE")) return "Free";
 
-  // If we still have a tier name, return it as-is (title-cased)
-  if (tierName && tierName !== "Unknown") {
+  // 3. If upgradeSubscriptionType exists, account is on free tier (needs upgrade)
+  if (subscriptionInfo.currentTier?.upgradeSubscriptionType) return "Free";
+
+  // 4. If we have a tier name that didn't match any pattern, return it title-cased
+  if (tierName) {
     return tierName.charAt(0).toUpperCase() + tierName.slice(1).toLowerCase();
   }
 
-  return "Unknown";
+  return "Free";
 }
 
 /**
@@ -253,13 +265,6 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
     // Single cached call for subscription info (provides both projectId and plan)
     const subscriptionInfo = await getAntigravitySubscriptionInfoCached(accessToken);
     const projectId = subscriptionInfo?.cloudaicompanionProject || null;
-    
-    // Log subscription info for debugging tier labels
-    console.log("[Usage] Antigravity subscriptionInfo:", JSON.stringify({
-      currentTier: subscriptionInfo?.currentTier,
-      subscriptionType: subscriptionInfo?.subscriptionType,
-      tier: subscriptionInfo?.tier,
-    }));
 
     // Fetch quota data
     const response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
