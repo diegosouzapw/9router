@@ -32,7 +32,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, priority, globalPriority, defaultModel, isActive, apiKey, testStatus, lastError, lastErrorAt } = body;
+    const { name, priority, globalPriority, defaultModel, isActive, apiKey, testStatus, lastError, lastErrorAt, healthCheckInterval } = body;
 
     const existing = await getProviderConnectionById(id);
     if (!existing) {
@@ -49,6 +49,7 @@ export async function PUT(request, { params }) {
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
+    if (healthCheckInterval !== undefined) updateData.healthCheckInterval = healthCheckInterval;
 
     const updated = await updateProviderConnection(id, updateData);
 

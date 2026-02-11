@@ -1393,6 +1393,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
     name: "",
     priority: 1,
     apiKey: "",
+    healthCheckInterval: 60,
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -1406,6 +1407,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        healthCheckInterval: connection.healthCheckInterval ?? 60,
       });
       setTestResult(null);
       setValidationResult(null);
@@ -1449,7 +1451,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      const updates = { name: formData.name, priority: formData.priority };
+      const updates = { name: formData.name, priority: formData.priority, healthCheckInterval: formData.healthCheckInterval };
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
         let isValid = validationResult === "success";
@@ -1502,6 +1504,15 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
             <p className="text-sm text-text-muted mb-1">Email</p>
             <p className="font-medium">{connection.email}</p>
           </div>
+        )}
+        {isOAuth && (
+          <Input
+            label="Health Check (min)"
+            type="number"
+            value={formData.healthCheckInterval}
+            onChange={(e) => setFormData({ ...formData, healthCheckInterval: Math.max(0, Number.parseInt(e.target.value) || 0) })}
+            hint="Proactive token refresh interval. 0 = disabled."
+          />
         )}
         <Input
           label="Priority"
