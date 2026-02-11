@@ -26,7 +26,7 @@ export default function Navigation() {
         <div className="hidden md:flex items-center gap-8">
           <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="#features">Features</a>
           <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="#how-it-works">How it Works</a>
-          <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="https://github.com/decolua/9router#readme" target="_blank" rel="noopener noreferrer">Docs</a>
+          <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="/docs">Docs</a>
           <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors flex items-center gap-1" href="https://github.com/decolua/9router" target="_blank" rel="noopener noreferrer">
             GitHub <span className="material-symbols-outlined text-[14px]">open_in_new</span>
           </a>
@@ -55,7 +55,7 @@ export default function Navigation() {
           <div className="flex flex-col gap-4 p-6">
             <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="#features" onClick={() => setMobileMenuOpen(false)}>Features</a>
             <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>How it Works</a>
-            <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="https://github.com/decolua/9router#readme" target="_blank" rel="noopener noreferrer">Docs</a>
+            <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="/docs">Docs</a>
             <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="https://github.com/decolua/9router" target="_blank" rel="noopener noreferrer">GitHub</a>
             <button 
               onClick={() => router.push("/dashboard")}
@@ -69,4 +69,3 @@ export default function Navigation() {
     </nav>
   );
 }
-

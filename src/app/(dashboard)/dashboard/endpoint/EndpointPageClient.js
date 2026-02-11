@@ -295,9 +295,10 @@ export default function APIPageClient({ machineId }) {
   ];
 
   const quickStartLinks = [
-    { label: "Documentation", href: "https://github.com/decolua/9router#readme" },
-    { label: "OpenAI API compatibility", href: "https://github.com/decolua/9router#openai-compatible-endpoints" },
-    { label: "Report issue", href: "https://github.com/decolua/9router/issues" },
+    { label: "Documentation", href: "/docs" },
+    { label: "OpenAI API compatibility", href: "/docs#api-reference" },
+    { label: "Cherry/Codex compatibility", href: "/docs#client-compatibility" },
+    { label: "Report issue", href: "https://github.com/decolua/9router/issues", external: true },
   ];
 
   return (
@@ -392,11 +393,13 @@ export default function APIPageClient({ machineId }) {
               <a
                 key={link.href}
                 href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
+                target={link.external ? "_blank" : undefined}
+                rel={link.external ? "noopener noreferrer" : undefined}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-text-muted hover:text-text-main hover:bg-bg-subtle transition-colors"
               >
-                <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                <span className="material-symbols-outlined text-[14px]">
+                  {link.external ? "open_in_new" : "arrow_forward"}
+                </span>
                 {link.label}
               </a>
             ))}

@@ -8,6 +8,11 @@
 - Enhanced Usage dashboard with API key observability:
   - added API key distribution donut + sortable/filterable table (cost/tokens/requests).
   - added explicit API key filter in Request Logger and API key column in log entries (masked display).
+- Added in-app documentation page at `/docs` with:
+  - quick start checklist and common use cases.
+  - endpoint reference (`/v1/*` + rewrite helper paths).
+  - client compatibility notes for Cherry Studio and Codex/Copilot model routing.
+- Updated docs navigation links across landing/dashboard UI to use local in-app docs instead of placeholder links.
 
 ## Fixes
 

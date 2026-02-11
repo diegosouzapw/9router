@@ -27,7 +27,7 @@ const systemItems = [
 ];
 
 const helpItems = [
-  { href: "https://github.com/decolua/9router#readme", label: "Docs", icon: "menu_book", external: true },
+  { href: "/docs", label: "Docs", icon: "menu_book" },
   { href: "https://github.com/decolua/9router/issues", label: "Issues", icon: "bug_report", external: true },
 ];
 
