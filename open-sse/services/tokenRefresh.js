@@ -12,9 +12,10 @@ const refreshPromiseCache = new Map();
  */
 export async function refreshAccessToken(provider, refreshToken, credentials, log) {
   const config = PROVIDERS[provider];
-  
-  if (!config || !config.refreshUrl) {
-    log?.warn?.("TOKEN_REFRESH", `No refresh URL configured for provider: ${provider}`);
+
+  const refreshEndpoint = config?.refreshUrl || config?.tokenUrl;
+  if (!config || !refreshEndpoint) {
+    log?.warn?.("TOKEN_REFRESH", `No refresh endpoint configured for provider: ${provider}`);
     return null;
   }
 
@@ -24,18 +25,20 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
   }
 
   try {
-    const response = await fetch(config.refreshUrl, {
+    const params = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    });
+    if (config.clientId) params.set("client_id", config.clientId);
+    if (config.clientSecret) params.set("client_secret", config.clientSecret);
+
+    const response = await fetch(refreshEndpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json",
       },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
-      }),
+      body: params,
     });
 
     if (!response.ok) {
@@ -64,6 +67,117 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
     log?.error?.("TOKEN_REFRESH", `Error refreshing token for ${provider}`, {
       error: error.message,
     });
+    return null;
+  }
+}
+
+/**
+ * Specialized refresh for Cline OAuth tokens.
+ * Cline refresh endpoint expects JSON body and returns camelCase fields.
+ */
+export async function refreshClineToken(refreshToken, log) {
+  const endpoint = PROVIDERS.cline?.refreshUrl;
+  if (!endpoint) {
+    log?.warn?.("TOKEN_REFRESH", "No refresh URL configured for Cline");
+    return null;
+  }
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        refreshToken,
+        grantType: "refresh_token",
+        clientType: "extension",
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Cline token", {
+        status: response.status,
+        error: errorText,
+      });
+      return null;
+    }
+
+    const payload = await response.json();
+    const data = payload?.data || payload;
+    const expiresAtIso = data?.expiresAt;
+    const expiresIn = expiresAtIso
+      ? Math.max(1, Math.floor((new Date(expiresAtIso).getTime() - Date.now()) / 1000))
+      : undefined;
+
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Cline token", {
+      hasNewAccessToken: !!data?.accessToken,
+      hasNewRefreshToken: !!data?.refreshToken,
+      expiresIn,
+    });
+
+    return {
+      accessToken: data?.accessToken,
+      refreshToken: data?.refreshToken || refreshToken,
+      expiresIn,
+    };
+  } catch (error) {
+    log?.error?.("TOKEN_REFRESH", `Network error refreshing Cline token: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Specialized refresh for Kimi Coding OAuth tokens.
+ */
+export async function refreshKimiCodingToken(refreshToken, log) {
+  const endpoint = PROVIDERS["kimi-coding"]?.refreshUrl || PROVIDERS["kimi-coding"]?.tokenUrl;
+  if (!endpoint) {
+    log?.warn?.("TOKEN_REFRESH", "No refresh URL configured for Kimi Coding");
+    return null;
+  }
+
+  try {
+    const params = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: PROVIDERS["kimi-coding"]?.clientId || "",
+    });
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: params,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Kimi Coding token", {
+        status: response.status,
+        error: errorText,
+      });
+      return null;
+    }
+
+    const tokens = await response.json();
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kimi Coding token", {
+      hasNewAccessToken: !!tokens.access_token,
+      hasNewRefreshToken: !!tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+    });
+
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || refreshToken,
+      expiresIn: tokens.expires_in,
+    };
+  } catch (error) {
+    log?.error?.("TOKEN_REFRESH", `Network error refreshing Kimi Coding token: ${error.message}`);
     return null;
   }
 }
@@ -510,11 +624,39 @@ async function _getAccessTokenInternal(provider, credentials, log) {
         credentials.providerSpecificData,
         log
       );
+
+    case "cline":
+      return await refreshClineToken(credentials.refreshToken, log);
+
+    case "kimi-coding":
+      return await refreshKimiCodingToken(credentials.refreshToken, log);
     
     default:
       // Fallback to generic OAuth refresh for unknown providers
       return refreshAccessToken(provider, credentials.refreshToken, credentials, log);
   }
+}
+
+/**
+ * Whether a provider has a supported refresh path in this service.
+ */
+export function supportsTokenRefresh(provider) {
+  const explicitlySupported = new Set([
+    "gemini",
+    "gemini-cli",
+    "antigravity",
+    "claude",
+    "codex",
+    "qwen",
+    "iflow",
+    "github",
+    "kiro",
+    "cline",
+    "kimi-coding",
+  ]);
+  if (explicitlySupported.has(provider)) return true;
+  const config = PROVIDERS[provider];
+  return !!(config?.refreshUrl || config?.tokenUrl);
 }
 
 /**
@@ -657,4 +799,3 @@ export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
   log?.error?.("TOKEN_REFRESH", `All ${maxRetries} retry attempts failed`);
   return null;
 }
-

@@ -54,7 +54,7 @@ export default function KiloToolCard({
       fetchModelAliases();
       fetchBackups();
     }
-  }, [isExpanded]);
+  }, [isExpanded, kiloStatus]);
 
   const fetchModelAliases = async () => {
     try {

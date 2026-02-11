@@ -86,6 +86,7 @@ export async function computeAnalytics(history, range = "30d", connectionMap = {
     totalRequests: entries.length,
     uniqueModels: new Set(),
     uniqueAccounts: new Set(),
+    uniqueApiKeys: new Set(),
   };
 
   // ---- Daily trend ----
@@ -101,6 +102,7 @@ export async function computeAnalytics(history, range = "30d", connectionMap = {
   const byModelMap = {};
   const byAccountMap = {};
   const byProviderMap = {};
+  const byApiKeyMap = {};
 
   // ---- Weekly pattern (0=Sun..6=Sat) ----
   const weeklyTokens = [0, 0, 0, 0, 0, 0, 0];
@@ -139,6 +141,9 @@ export async function computeAnalytics(history, range = "30d", connectionMap = {
     summary.totalCost += cost;
     if (entry.model) summary.uniqueModels.add(modelShort);
     if (entry.connectionId) summary.uniqueAccounts.add(entry.connectionId);
+    if (entry.apiKeyId || entry.apiKeyName) {
+      summary.uniqueApiKeys.add(entry.apiKeyId || entry.apiKeyName);
+    }
 
     // Daily trend
     if (!dailyMap[dateKey]) {
@@ -188,6 +193,29 @@ export async function computeAnalytics(history, range = "30d", connectionMap = {
     byProviderMap[prov].completionTokens += ct;
     byProviderMap[prov].totalTokens += totalTkns;
     byProviderMap[prov].cost += cost;
+
+    // By API key
+    if (entry.apiKeyId || entry.apiKeyName) {
+      const keyName = entry.apiKeyName || entry.apiKeyId || "unknown";
+      const keyLabel = entry.apiKeyId ? `${keyName} (${entry.apiKeyId})` : keyName;
+      if (!byApiKeyMap[keyLabel]) {
+        byApiKeyMap[keyLabel] = {
+          apiKey: keyLabel,
+          apiKeyId: entry.apiKeyId || null,
+          apiKeyName: keyName,
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          cost: 0,
+        };
+      }
+      byApiKeyMap[keyLabel].requests++;
+      byApiKeyMap[keyLabel].promptTokens += pt;
+      byApiKeyMap[keyLabel].completionTokens += ct;
+      byApiKeyMap[keyLabel].totalTokens += totalTkns;
+      byApiKeyMap[keyLabel].cost += cost;
+    }
   }
 
   // ---- Build sorted arrays ----
@@ -215,6 +243,7 @@ export async function computeAnalytics(history, range = "30d", connectionMap = {
 
   const byAccount = Object.values(byAccountMap).sort((a, b) => b.totalTokens - a.totalTokens);
   const byProvider = Object.values(byProviderMap).sort((a, b) => b.totalTokens - a.totalTokens);
+  const byApiKey = Object.values(byApiKeyMap).sort((a, b) => b.totalTokens - a.totalTokens);
 
   // Weekly pattern (avg tokens per day of week)
   const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -247,6 +276,7 @@ export async function computeAnalytics(history, range = "30d", connectionMap = {
       totalRequests: summary.totalRequests,
       uniqueModels: summary.uniqueModels.size,
       uniqueAccounts: summary.uniqueAccounts.size,
+      uniqueApiKeys: summary.uniqueApiKeys.size,
       streak,
     },
     dailyTrend,
@@ -255,6 +285,7 @@ export async function computeAnalytics(history, range = "30d", connectionMap = {
     byModel,
     byAccount,
     byProvider,
+    byApiKey,
     activityMap,
     weeklyPattern,
     range,

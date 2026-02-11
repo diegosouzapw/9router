@@ -47,7 +47,7 @@ export class DefaultExecutor extends BaseExecutor {
       case "kimi-coding":
       case "minimax":
       case "minimax-cn":
-        headers["x-api-key"] = credentials.apiKey;
+        headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
         break;
       default:
         if (this.provider?.startsWith?.("anthropic-compatible-")) {

@@ -332,7 +332,7 @@ export function estimateUsage(body, contentLength, targetFormat = FORMATS.OPENAI
 /**
  * Log usage with cache info (green color)
  */
-export function logUsage(provider, usage, model = null, connectionId = null) {
+export function logUsage(provider, usage, model = null, connectionId = null, apiKeyInfo = null) {
   if (!usage || typeof usage !== "object") return;
 
   const p = provider?.toUpperCase() || "UNKNOWN";
@@ -371,6 +371,13 @@ export function logUsage(provider, usage, model = null, connectionId = null) {
     cacheCreation: cacheCreation || 0,
     reasoning: reasoning || 0
   };
-  saveRequestUsage({ model, provider, connectionId, tokens }).catch(() => { });
+  saveRequestUsage({
+    model,
+    provider,
+    connectionId,
+    apiKeyId: apiKeyInfo?.id || undefined,
+    apiKeyName: apiKeyInfo?.name || undefined,
+    tokens
+  }).catch(() => { });
   appendRequestLog({ model, provider, connectionId, tokens, status: "200 OK" }).catch(() => { });
 }

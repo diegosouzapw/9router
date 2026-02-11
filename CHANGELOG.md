@@ -1,3 +1,62 @@
+# v0.2.75 (2026-02-11)
+
+## Features
+
+- Added API key attribution in usage and call logs:
+  - request pipeline now captures API key metadata (`id`/`name`) when available.
+  - analytics now includes API-key level aggregates (`summary.uniqueApiKeys`, `byApiKey`).
+- Enhanced Usage dashboard with API key observability:
+  - added API key distribution donut + sortable/filterable table (cost/tokens/requests).
+  - added explicit API key filter in Request Logger and API key column in log entries (masked display).
+- Added in-app documentation page at `/docs` with:
+  - quick start checklist and common use cases.
+  - endpoint reference (`/v1/*` + rewrite helper paths).
+  - client compatibility notes for Cherry Studio and Codex/Copilot model routing.
+- Updated docs navigation links across landing/dashboard UI to use local in-app docs instead of placeholder links.
+
+## Fixes
+
+- Unified storage path policy for `localDb` and `usageDb`:
+  - both now follow `DATA_DIR` first.
+  - when `DATA_DIR` is unset on Linux/macOS, support `XDG_CONFIG_HOME/9router`.
+  - legacy `~/.9router` files are auto-migrated when the resolved directory changes.
+- Added build-phase guard to `usageDb` (in-memory mode during `next build`) to avoid unintended disk writes.
+- Added optional feature flag for compatible nodes:
+  - `ALLOW_MULTI_CONNECTIONS_PER_COMPAT_NODE=true` allows multiple connections per OpenAI/Anthropic-compatible node.
+- Improved LAN/reverse-proxy cookie security detection in login route (`x-forwarded-proto` parsing + protocol fallback).
+- Hardened Antigravity request normalization for Gemini 3 Flash by dropping empty `contents` after `thought` filtering and adding preview-model compatibility mapping.
+- Hardened non-stream fallback parsing when upstream returns SSE unexpectedly:
+  - non-stream responses now detect SSE by header/content and parse accordingly.
+  - uses Responses SSE parsing for `openai-responses` targets to avoid `JSON.parse` crashes.
+  - fixes `stream=false` stability for Codex chat compatibility paths.
+- Fixed CLI tool/runtime and OAuth refresh reliability:
+  - increased Cline runtime health-check timeout to avoid false `not runnable` status.
+  - added refresh support for `cline` and `kimi-coding` OAuth providers.
+  - health-check scheduler now skips providers without supported refresh flow instead of forcing error state.
+- Improved provider health diagnostics and retest flow:
+  - `/api/providers/[id]/test` now returns structured diagnosis (`runtime_error`, `upstream_auth_error`, `token_refresh_failed`, etc).
+  - persisted diagnostic metadata in connections (`lastErrorType`, `lastErrorSource`, `errorCode`, `lastTested`).
+  - provider detail UI now includes explicit `Retest` action per connection and clearer status badges separating local runtime issues from upstream auth failures.
+
+# v0.2.74 (2026-02-11)
+
+## Fixes
+
+- Fixed model resolution fallback for unprefixed models to avoid incorrect OpenAI routing:
+  - Resolve to unique non-OpenAI provider when unambiguous.
+  - Return explicit `400` for ambiguous unprefixed models with prefix guidance (`gh/<model>`, etc).
+  - Keep OpenAI fallback for unknown/unmapped models for backward compatibility.
+- Added GitHub Copilot dynamic endpoint selection for Codex-family models:
+  - Codex models now route to `/responses`.
+  - Non-Codex models remain on `/chat/completions`.
+- Added non-stream (`stream=false`) translation path for OpenAI Responses payloads to OpenAI Chat Completions response shape.
+- Added non-stream usage extraction support for OpenAI Responses (`input_tokens`/`output_tokens`).
+- Updated GitHub model catalog with upstream corrections and compatibility aliases:
+  - `raptor-mini` → `oswe-vscode-prime`
+  - `gemini-3-pro` → `gemini-3-pro-preview`
+  - `gemini-3-flash` → `gemini-3-flash-preview`
+  - Added `claude-opus-4.6`, `gpt-4o`, `gpt-4o-mini`, `gpt-4`, `gpt-3.5-turbo`.
+
 # v0.2.73 (2026-02-09)
 
 ## Features

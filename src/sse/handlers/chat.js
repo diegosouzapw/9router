@@ -13,7 +13,7 @@ import { handleComboChat } from "open-sse/services/combo.js";
 import { HTTP_STATUS } from "open-sse/config/constants.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
-import { getSettings, getCombos } from "../../lib/localDb.js";
+import { getSettings, getCombos, getApiKeyMetadata } from "../../lib/localDb.js";
 
 /**
  * Handle chat completion request
@@ -52,9 +52,15 @@ export async function handleChat(request, clientRawRequest = null) {
   // Log API key (masked)
   const authHeader = request.headers.get("Authorization");
   const apiKey = extractApiKey(request);
+  let apiKeyInfo = null;
   if (authHeader && apiKey) {
     const masked = log.maskKey(apiKey);
     log.debug("AUTH", `API Key: ${masked}`);
+    try {
+      apiKeyInfo = await getApiKeyMetadata(apiKey);
+    } catch {
+      apiKeyInfo = null;
+    }
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
   }
@@ -102,7 +108,7 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       combo,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, combo.name),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, combo.name, apiKeyInfo),
       isModelAvailable,
       log,
       settings,
@@ -111,15 +117,25 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, null, apiKeyInfo);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, comboName = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, comboName = null, apiKeyInfo = null) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) {
+    if (modelInfo.errorType === "ambiguous_model") {
+      const message = modelInfo.errorMessage
+        || `Ambiguous model '${modelStr}'. Use provider/model prefix (ex: gh/${modelStr} or cc/${modelStr}).`;
+      log.warn("CHAT", message, {
+        model: modelStr,
+        candidates: modelInfo.candidateAliases || modelInfo.candidateProviders || []
+      });
+      return errorResponse(HTTP_STATUS.BAD_REQUEST, message);
+    }
+
     log.warn("CHAT", "Invalid model format", { model: modelStr });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
   }
@@ -174,6 +190,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       log,
       clientRawRequest,
       connectionId: credentials.connectionId,
+      apiKeyInfo,
       userAgent,
       comboName,
       onCredentialsRefreshed: async (newCreds) => {

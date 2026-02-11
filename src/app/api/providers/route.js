@@ -49,6 +49,7 @@ export async function POST(request) {
     }
 
     let providerSpecificData = null;
+    const allowMultipleCompatibleConnections = process.env.ALLOW_MULTI_CONNECTIONS_PER_COMPAT_NODE === "true";
 
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
@@ -57,7 +58,7 @@ export async function POST(request) {
       }
 
       const existingConnections = await getProviderConnections({ provider });
-      if (existingConnections.length > 0) {
+      if (!allowMultipleCompatibleConnections && existingConnections.length > 0) {
         return NextResponse.json({ error: "Only one connection is allowed for this OpenAI Compatible node" }, { status: 400 });
       }
 
@@ -74,7 +75,7 @@ export async function POST(request) {
       }
 
       const existingConnections = await getProviderConnections({ provider });
-      if (existingConnections.length > 0) {
+      if (!allowMultipleCompatibleConnections && existingConnections.length > 0) {
         return NextResponse.json({ error: "Only one connection is allowed for this Anthropic Compatible node" }, { status: 400 });
       }
 

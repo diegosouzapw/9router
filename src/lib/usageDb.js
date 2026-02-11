@@ -1,55 +1,24 @@
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import path from "path";
-import os from "os";
 import fs from "fs";
-import { fileURLToPath } from "url";
+import { resolveDataDir, getLegacyDotDataDir, isSamePath } from "./dataPaths.js";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
-
-// Get app name from root package.json config
-function getAppName() {
-  if (isCloud) return "9router"; // Skip file system access in Workers
-
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  // Look for root package.json (monorepo root)
-  const rootPkgPath = path.resolve(__dirname, "../../../package.json");
-  try {
-    const pkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf-8"));
-    return pkg.config?.appName || "9router";
-  } catch {
-    return "9router";
-  }
-}
-
-// Get user data directory based on platform
-function getUserDataDir() {
-  if (isCloud) return "/tmp"; // Fallback for Workers
-
-  try {
-    const platform = process.platform;
-    const homeDir = os.homedir();
-    const appName = getAppName();
-
-    if (platform === "win32") {
-      return path.join(process.env.APPDATA || path.join(homeDir, "AppData", "Roaming"), appName);
-    } else {
-      // macOS & Linux: ~/.{appName}
-      return path.join(homeDir, `.${appName}`);
-    }
-  } catch (error) {
-    console.error("[usageDb] Failed to get user data directory:", error.message);
-    // Fallback to cwd if homedir fails
-    return path.join(process.cwd(), ".9router");
-  }
-}
+const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+const shouldPersistToDisk = !isCloud && !isBuildPhase;
 
 // Data file path - stored in user home directory
-const DATA_DIR = getUserDataDir();
+const DATA_DIR = resolveDataDir({ isCloud });
+const LEGACY_DATA_DIR = isCloud ? null : getLegacyDotDataDir();
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "usage.json");
 const LOG_FILE = isCloud ? null : path.join(DATA_DIR, "log.txt");
 const CALL_LOGS_DB_FILE = isCloud ? null : path.join(DATA_DIR, "call_logs.json");
 const CALL_LOGS_DIR = isCloud ? null : path.join(DATA_DIR, "call_logs");
+const LEGACY_DB_FILE = isCloud || !LEGACY_DATA_DIR ? null : path.join(LEGACY_DATA_DIR, "usage.json");
+const LEGACY_LOG_FILE = isCloud || !LEGACY_DATA_DIR ? null : path.join(LEGACY_DATA_DIR, "log.txt");
+const LEGACY_CALL_LOGS_DB_FILE = isCloud || !LEGACY_DATA_DIR ? null : path.join(LEGACY_DATA_DIR, "call_logs.json");
+const LEGACY_CALL_LOGS_DIR = isCloud || !LEGACY_DATA_DIR ? null : path.join(LEGACY_DATA_DIR, "call_logs");
 
 // Ensure data directory exists
 if (!isCloud && fs && typeof fs.existsSync === "function") {
@@ -63,10 +32,42 @@ if (!isCloud && fs && typeof fs.existsSync === "function") {
   }
 }
 
+function copyIfMissing(fromPath, toPath, label) {
+  if (!fromPath || !toPath) return;
+  if (!fs.existsSync(fromPath) || fs.existsSync(toPath)) return;
+
+  if (fs.statSync(fromPath).isDirectory()) {
+    fs.cpSync(fromPath, toPath, { recursive: true });
+  } else {
+    fs.copyFileSync(fromPath, toPath);
+  }
+  console.log(`[usageDb] Migrated ${label}: ${fromPath} -> ${toPath}`);
+}
+
+function migrateLegacyUsageFiles() {
+  if (!shouldPersistToDisk || !LEGACY_DATA_DIR) return;
+  if (isSamePath(DATA_DIR, LEGACY_DATA_DIR)) return;
+
+  try {
+    copyIfMissing(LEGACY_DB_FILE, DB_FILE, "usage history");
+    copyIfMissing(LEGACY_LOG_FILE, LOG_FILE, "request log");
+    copyIfMissing(LEGACY_CALL_LOGS_DB_FILE, CALL_LOGS_DB_FILE, "call log index");
+    copyIfMissing(LEGACY_CALL_LOGS_DIR, CALL_LOGS_DIR, "call log files");
+  } catch (error) {
+    console.error("[usageDb] Legacy migration failed:", error.message);
+  }
+}
+
+migrateLegacyUsageFiles();
+
 // Default data structure
 const defaultData = {
   history: []
 };
+
+function cloneDefaultData() {
+  return JSON.parse(JSON.stringify(defaultData));
+}
 
 // Singleton instance
 let dbInstance = null;
@@ -104,18 +105,22 @@ export function trackPendingRequest(model, provider, connectionId, started) {
  * Get usage database instance (singleton)
  */
 export async function getUsageDb() {
-  if (isCloud) {
-    // Return in-memory DB for Workers
+  if (isCloud || isBuildPhase) {
+    // Return in-memory DB for Workers/build to avoid disk writes during build.
     if (!dbInstance) {
-      dbInstance = new Low({ read: async () => {}, write: async () => {} }, defaultData);
-      dbInstance.data = defaultData;
+      const data = cloneDefaultData();
+      dbInstance = new Low({ read: async () => {}, write: async () => {} }, data);
+      dbInstance.data = data;
+      if (isBuildPhase) {
+        console.log("[usageDb] Build phase detected — using in-memory usage DB (read-only)");
+      }
     }
     return dbInstance;
   }
 
   if (!dbInstance) {
     const adapter = new JSONFile(DB_FILE);
-    dbInstance = new Low(adapter, defaultData);
+    dbInstance = new Low(adapter, cloneDefaultData());
 
     // Try to read DB with error recovery for corrupt JSON
     try {
@@ -123,7 +128,7 @@ export async function getUsageDb() {
     } catch (error) {
       if (error instanceof SyntaxError) {
         console.warn('[DB] Corrupt Usage JSON detected, resetting to defaults...');
-        dbInstance.data = defaultData;
+        dbInstance.data = cloneDefaultData();
         await dbInstance.write();
       } else {
         throw error;
@@ -132,7 +137,7 @@ export async function getUsageDb() {
 
     // Initialize with default data if empty
     if (!dbInstance.data) {
-      dbInstance.data = defaultData;
+      dbInstance.data = cloneDefaultData();
       await dbInstance.write();
     }
   }
@@ -141,10 +146,10 @@ export async function getUsageDb() {
 
 /**
  * Save request usage
- * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId? }
+ * @param {object} entry - Usage entry { provider, model, tokens, connectionId?, apiKeyId?, apiKeyName? }
  */
 export async function saveRequestUsage(entry) {
-  if (isCloud) return; // Skip saving in Workers
+  if (!shouldPersistToDisk) return; // Skip saving in workers/build phase
 
   try {
     const db = await getUsageDb();
@@ -219,7 +224,7 @@ function formatLogDate(date = new Date()) {
  * Format: datetime(dd-mm-yyyy h:m:s) | model | provider | account | tokens sent | tokens received | status
  */
 export async function appendRequestLog({ model, provider, connectionId, tokens, status }) {
-  if (isCloud) return; // Skip logging in Workers
+  if (!shouldPersistToDisk) return; // Skip logging in workers/build phase
 
   try {
     const timestamp = formatLogDate();
@@ -259,7 +264,7 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
  * Get last N lines of log.txt
  */
 export async function getRecentLogs(limit = 200) {
-  if (isCloud) return []; // Skip in Workers
+  if (!shouldPersistToDisk) return []; // Skip in workers/build phase
   
   // Runtime check: ensure fs module is available
   if (!fs || typeof fs.existsSync !== "function") {
@@ -377,6 +382,7 @@ export async function getUsageStats() {
     byProvider: {},
     byModel: {},
     byAccount: {},
+    byApiKey: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: []
@@ -509,6 +515,33 @@ export async function getUsageStats() {
         stats.byAccount[accountKey].lastUsed = entry.timestamp;
       }
     }
+
+    // By API key
+    if (entry.apiKeyId || entry.apiKeyName) {
+      const keyName = entry.apiKeyName || entry.apiKeyId || "unknown";
+      const keyId = entry.apiKeyId || null;
+      const apiKey = keyId ? `${keyName} (${keyId})` : keyName;
+
+      if (!stats.byApiKey[apiKey]) {
+        stats.byApiKey[apiKey] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          apiKeyId: keyId,
+          apiKeyName: keyName,
+          lastUsed: entry.timestamp
+        };
+      }
+
+      stats.byApiKey[apiKey].requests++;
+      stats.byApiKey[apiKey].promptTokens += promptTokens;
+      stats.byApiKey[apiKey].completionTokens += completionTokens;
+      stats.byApiKey[apiKey].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKey].lastUsed)) {
+        stats.byApiKey[apiKey].lastUsed = entry.timestamp;
+      }
+    }
   }
 
   return stats;
@@ -526,7 +559,7 @@ const CALL_LOGS_MAX = 500;
 let callLogsDbInstance = null;
 
 async function getCallLogsDb() {
-  if (isCloud || !CALL_LOGS_DB_FILE) return null;
+  if (!shouldPersistToDisk || !CALL_LOGS_DB_FILE) return null;
   
   if (!callLogsDbInstance) {
     const adapter = new JSONFile(CALL_LOGS_DB_FILE);
@@ -578,9 +611,11 @@ function generateLogId() {
  * @param {string} entry.error - Error message if failed
  * @param {string} entry.sourceFormat - Source format (openai, claude, etc.)
  * @param {string} entry.targetFormat - Target format
+ * @param {string} entry.apiKeyId - API key ID used by the client request
+ * @param {string} entry.apiKeyName - API key display name used by the client request
  */
 export async function saveCallLog(entry) {
-  if (isCloud) return;
+  if (!shouldPersistToDisk) return;
   
   try {
     // Resolve account name
@@ -623,6 +658,8 @@ export async function saveCallLog(entry) {
       },
       sourceFormat: entry.sourceFormat || null,
       targetFormat: entry.targetFormat || null,
+      apiKeyId: entry.apiKeyId || null,
+      apiKeyName: entry.apiKeyName || null,
       requestBody: truncatePayload(entry.requestBody),
       responseBody: truncatePayload(entry.responseBody),
       error: entry.error || null,
@@ -717,7 +754,7 @@ export function rotateCallLogs() {
 }
 
 // Run rotation on startup
-if (!isCloud) {
+if (shouldPersistToDisk) {
   try { rotateCallLogs(); } catch {}
 }
 
@@ -728,7 +765,9 @@ if (!isCloud) {
  * @param {string} filter.model - Model name substring
  * @param {string} filter.provider - Provider ID
  * @param {string} filter.account - Account name substring
- * @param {string} filter.search - Free text search across model, path, account, provider, comboName
+ * @param {string} filter.apiKey - API key ID or name substring
+ * @param {boolean|string} filter.combo - Whether to include only combo calls
+ * @param {string} filter.search - Free text search across model, path, account, provider, apiKey, comboName
  * @param {number} filter.limit - Max entries (default 200)
  */
 export async function getCallLogs(filter = {}) {
@@ -769,6 +808,18 @@ export async function getCallLogs(filter = {}) {
     const q = filter.account.toLowerCase();
     logs = logs.filter(l => l.account?.toLowerCase().includes(q));
   }
+
+  if (filter.apiKey) {
+    const q = filter.apiKey.toLowerCase();
+    logs = logs.filter(l =>
+      l.apiKeyName?.toLowerCase().includes(q) ||
+      l.apiKeyId?.toLowerCase().includes(q)
+    );
+  }
+
+  if (filter.combo) {
+    logs = logs.filter((l) => !!l.comboName);
+  }
   
   if (filter.search) {
     const q = filter.search.toLowerCase();
@@ -777,6 +828,8 @@ export async function getCallLogs(filter = {}) {
       l.path?.toLowerCase().includes(q) ||
       l.account?.toLowerCase().includes(q) ||
       l.provider?.toLowerCase().includes(q) ||
+      l.apiKeyName?.toLowerCase().includes(q) ||
+      l.apiKeyId?.toLowerCase().includes(q) ||
       l.comboName?.toLowerCase().includes(q) ||
       String(l.status).includes(q)
     );
@@ -800,6 +853,8 @@ export async function getCallLogs(filter = {}) {
     targetFormat: l.targetFormat,
     error: l.error,
     comboName: l.comboName || null,
+    apiKeyId: l.apiKeyId || null,
+    apiKeyName: l.apiKeyName || null,
     hasRequestBody: !!l.requestBody,
     hasResponseBody: !!l.responseBody,
   }));

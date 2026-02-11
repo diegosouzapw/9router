@@ -199,3 +199,55 @@ export function parseQuotaData(provider, data) {
 
   return normalizedQuotas;
 }
+
+/**
+ * Normalize provider-specific plan labels into a shared tier taxonomy.
+ * Supported tiers: enterprise, business, ultra, pro, free, unknown.
+ */
+export function normalizePlanTier(plan) {
+  const raw = typeof plan === "string" ? plan.trim() : "";
+  if (!raw) {
+    return { key: "unknown", label: "Unknown", variant: "default", rank: 0, raw: null };
+  }
+
+  const upper = raw.toUpperCase();
+
+  if (upper.includes("ENTERPRISE") || upper.includes("CORP") || upper.includes("ORG")) {
+    return { key: "enterprise", label: "Enterprise", variant: "info", rank: 6, raw };
+  }
+
+  if (upper.includes("BUSINESS") || upper.includes("TEAM") || upper.includes("STANDARD")) {
+    return { key: "business", label: "Business", variant: "warning", rank: 5, raw };
+  }
+
+  if (upper.includes("ULTRA")) {
+    return { key: "ultra", label: "Ultra", variant: "success", rank: 4, raw };
+  }
+
+  if (
+    upper.includes("PRO")
+    || upper.includes("PLUS")
+    || upper.includes("PREMIUM")
+    || upper.includes("PAID")
+  ) {
+    return { key: "pro", label: "Pro", variant: "primary", rank: 3, raw };
+  }
+
+  if (
+    upper.includes("FREE")
+    || upper.includes("INDIVIDUAL")
+    || upper.includes("BASIC")
+    || upper.includes("TRIAL")
+    || upper.includes("LEGACY")
+  ) {
+    return { key: "free", label: "Free", variant: "default", rank: 1, raw };
+  }
+
+  const titleCased = raw
+    .toLowerCase()
+    .split(/[\s_-]+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+  return { key: "unknown", label: titleCased || "Unknown", variant: "default", rank: 0, raw };
+}

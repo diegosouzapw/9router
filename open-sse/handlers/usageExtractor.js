@@ -15,6 +15,18 @@ export function extractUsageFromResponse(responseBody, provider) {
     };
   }
 
+  // OpenAI Responses API format (input_tokens / output_tokens)
+  const responsesUsage = responseBody.response?.usage || responseBody.usage;
+  if (responsesUsage && typeof responsesUsage === 'object' && (responsesUsage.input_tokens !== undefined || responsesUsage.output_tokens !== undefined)) {
+    return {
+      prompt_tokens: responsesUsage.input_tokens || 0,
+      completion_tokens: responsesUsage.output_tokens || 0,
+      cached_tokens: responsesUsage.cache_read_input_tokens,
+      cache_creation_input_tokens: responsesUsage.cache_creation_input_tokens,
+      reasoning_tokens: responsesUsage.reasoning_tokens || responsesUsage.output_tokens_details?.reasoning_tokens
+    };
+  }
+
   // Claude format
   if (responseBody.usage && typeof responseBody.usage === 'object' && (responseBody.usage.input_tokens !== undefined || responseBody.usage.output_tokens !== undefined)) {
     return {

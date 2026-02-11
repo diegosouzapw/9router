@@ -22,6 +22,18 @@ const nextConfig = {
   async rewrites() {
     return [
       {
+        source: "/chat/completions",
+        destination: "/api/v1/chat/completions"
+      },
+      {
+        source: "/responses",
+        destination: "/api/v1/responses"
+      },
+      {
+        source: "/models",
+        destination: "/api/v1/models"
+      },
+      {
         source: "/v1/v1/:path*",
         destination: "/api/v1/:path*"
       },

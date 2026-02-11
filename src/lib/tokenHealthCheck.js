@@ -11,7 +11,7 @@
  */
 
 import { getProviderConnections, updateProviderConnection } from "@/lib/localDb";
-import { getAccessToken } from "open-sse/services/tokenRefresh.js";
+import { getAccessToken, supportsTokenRefresh } from "open-sse/services/tokenRefresh.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const TICK_MS = 60 * 1000; // sweep interval: every 60 seconds
@@ -78,6 +78,12 @@ async function checkConnection(conn) {
   if (intervalMin <= 0) return;
   if (!conn.isActive) return;
   if (!conn.refreshToken) return;
+  if (!supportsTokenRefresh(conn.provider)) {
+    const now = new Date().toISOString();
+    await updateProviderConnection(conn.id, { lastHealthCheckAt: now });
+    console.log(`${LOG_PREFIX} Skipping ${conn.provider}/${conn.name || conn.email || conn.id} (refresh unsupported)`);
+    return;
+  }
 
   const intervalMs = intervalMin * 60 * 1000;
   const lastCheck = conn.lastHealthCheckAt ? new Date(conn.lastHealthCheckAt).getTime() : 0;
@@ -110,6 +116,9 @@ async function checkConnection(conn) {
       testStatus: "active",
       lastError: null,
       lastErrorAt: null,
+      lastErrorType: null,
+      lastErrorSource: null,
+      errorCode: null,
     };
 
     if (result.refreshToken) {
@@ -129,6 +138,9 @@ async function checkConnection(conn) {
       testStatus: "error",
       lastError: "Health check: token refresh failed",
       lastErrorAt: now,
+      lastErrorType: "token_refresh_failed",
+      lastErrorSource: "oauth",
+      errorCode: "refresh_failed",
     });
     console.warn(`${LOG_PREFIX} ✗ ${conn.provider}/${conn.name || conn.email || conn.id} refresh failed`);
   }

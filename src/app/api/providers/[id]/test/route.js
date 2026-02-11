@@ -2,10 +2,8 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById, updateProviderConnection, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
-import {
-  KIRO_CONFIG,
-} from "@/lib/oauth/constants/oauth";
 import { validateProviderApiKey } from "@/lib/providers/validation";
+import { getCliRuntimeStatus } from "@/shared/services/cliRuntime";
 // Use the shared open-sse token refresh with built-in dedup/race-condition cache
 import { getAccessToken } from "open-sse/services/tokenRefresh.js";
 
@@ -55,11 +53,144 @@ const OAUTH_TEST_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
   },
+  "kimi-coding": {
+    checkExpiry: true,
+    refreshable: true,
+  },
+  kilocode: {
+    // Kilo OAuth does not expose a stable user-info endpoint in all environments.
+    // Validate using token presence/expiry as a lightweight auth check.
+    checkExpiry: true,
+  },
+  cline: {
+    url: "https://api.cline.bot/api/v1/models",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    refreshable: true,
+    extraHeaders: {
+      "HTTP-Referer": "https://cline.bot",
+      "X-Title": "Cline",
+    },
+  },
   kiro: {
     checkExpiry: true,
     refreshable: true,
   },
 };
+
+const CLI_RUNTIME_PROVIDER_MAP = {
+  cline: "cline",
+  kilocode: "kilo",
+};
+
+function toSafeMessage(value, fallback = "Unknown error") {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  return trimmed || fallback;
+}
+
+function makeDiagnosis(type, source, message, code = null) {
+  return {
+    type,
+    source,
+    message: message || null,
+    code: code ?? null,
+  };
+}
+
+function classifyFailure({ error, statusCode = null, refreshFailed = false, unsupported = false }) {
+  const message = toSafeMessage(error, "Connection test failed");
+  const normalized = message.toLowerCase();
+  const numericStatus = Number.isFinite(statusCode) ? Number(statusCode) : null;
+
+  if (unsupported) {
+    return makeDiagnosis("unsupported", "validation", message, "unsupported");
+  }
+
+  if (refreshFailed || normalized.includes("refresh failed")) {
+    return makeDiagnosis("token_refresh_failed", "oauth", message, "refresh_failed");
+  }
+
+  if (numericStatus === 401 || numericStatus === 403) {
+    return makeDiagnosis("upstream_auth_error", "upstream", message, String(numericStatus));
+  }
+
+  if (numericStatus === 429) {
+    return makeDiagnosis("upstream_rate_limited", "upstream", message, "429");
+  }
+
+  if (numericStatus && numericStatus >= 500) {
+    return makeDiagnosis("upstream_unavailable", "upstream", message, String(numericStatus));
+  }
+
+  if (normalized.includes("token expired") || normalized.includes("expired")) {
+    return makeDiagnosis("token_expired", "oauth", message, "token_expired");
+  }
+
+  if (
+    normalized.includes("invalid api key") ||
+    normalized.includes("token invalid") ||
+    normalized.includes("revoked") ||
+    normalized.includes("access denied") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("forbidden")
+  ) {
+    return makeDiagnosis("upstream_auth_error", "upstream", message, numericStatus ? String(numericStatus) : "auth_failed");
+  }
+
+  if (
+    normalized.includes("rate limit") ||
+    normalized.includes("quota") ||
+    normalized.includes("too many requests")
+  ) {
+    return makeDiagnosis("upstream_rate_limited", "upstream", message, numericStatus ? String(numericStatus) : "rate_limited");
+  }
+
+  if (
+    normalized.includes("fetch failed") ||
+    normalized.includes("network") ||
+    normalized.includes("timeout") ||
+    normalized.includes("econn") ||
+    normalized.includes("enotfound") ||
+    normalized.includes("socket")
+  ) {
+    return makeDiagnosis("network_error", "upstream", message, "network_error");
+  }
+
+  return makeDiagnosis("upstream_error", "upstream", message, numericStatus ? String(numericStatus) : "upstream_error");
+}
+
+async function getProviderRuntimeStatus(provider) {
+  const toolId = CLI_RUNTIME_PROVIDER_MAP[provider];
+  if (!toolId) return null;
+
+  try {
+    const runtime = await getCliRuntimeStatus(toolId);
+    if (runtime.installed && runtime.runnable) {
+      return runtime;
+    }
+
+    const runtimeMessage = runtime.installed
+      ? `Local CLI runtime is installed but not runnable (${runtime.reason || "healthcheck_failed"})`
+      : "Local CLI runtime is not installed";
+
+    return {
+      ...runtime,
+      diagnosis: makeDiagnosis("runtime_error", "local", runtimeMessage, runtime.reason || "runtime_error"),
+      error: runtimeMessage,
+    };
+  } catch (error) {
+    const runtimeMessage = `Failed to check local CLI runtime: ${error?.message || "runtime_check_failed"}`;
+    return {
+      installed: false,
+      runnable: false,
+      reason: "runtime_check_failed",
+      diagnosis: makeDiagnosis("runtime_error", "local", runtimeMessage, "runtime_check_failed"),
+      error: runtimeMessage,
+    };
+  }
+}
 
 /**
  * Refresh OAuth token using the shared open-sse getAccessToken.
@@ -92,8 +223,9 @@ async function refreshOAuthToken(connection) {
  * Check if token is expired or about to expire (within 5 minutes)
  */
 function isTokenExpired(connection) {
-  if (!connection.expiresAt) return false;
-  const expiresAt = new Date(connection.expiresAt).getTime();
+  const expiresAtValue = connection.expiresAt || connection.tokenExpiresAt;
+  if (!expiresAtValue) return false;
+  const expiresAt = new Date(expiresAtValue).getTime();
   const buffer = 5 * 60 * 1000; // 5 minutes
   return expiresAt <= Date.now() + buffer;
 }
@@ -122,12 +254,24 @@ async function testOAuthConnection(connection) {
   const config = OAUTH_TEST_CONFIG[connection.provider];
 
   if (!config) {
-    return { valid: false, error: "Provider test not supported", refreshed: false };
+    const error = "Provider test not supported";
+    return {
+      valid: false,
+      error,
+      refreshed: false,
+      diagnosis: classifyFailure({ error, unsupported: true }),
+    };
   }
 
   // Check if token exists
   if (!connection.accessToken) {
-    return { valid: false, error: "No access token", refreshed: false };
+    const error = "No access token";
+    return {
+      valid: false,
+      error,
+      refreshed: false,
+      diagnosis: makeDiagnosis("auth_missing", "local", error, "missing_access_token"),
+    };
   }
 
   let accessToken = connection.accessToken;
@@ -144,7 +288,13 @@ async function testOAuthConnection(connection) {
       newTokens = tokens;
     } else {
       // Refresh failed
-      return { valid: false, error: "Token expired and refresh failed", refreshed: false };
+      const error = "Token expired and refresh failed";
+      return {
+        valid: false,
+        error,
+        refreshed: false,
+        diagnosis: classifyFailure({ error, refreshFailed: true }),
+      };
     }
   }
 
@@ -152,13 +302,31 @@ async function testOAuthConnection(connection) {
   if (config.checkExpiry) {
     // If we already refreshed successfully, token is valid
     if (refreshed) {
-      return { valid: true, error: null, refreshed, newTokens };
+      return {
+        valid: true,
+        error: null,
+        refreshed,
+        newTokens,
+        diagnosis: makeDiagnosis("ok", "oauth", null, null),
+      };
     }
     // Check if token is expired (no refresh available)
     if (tokenExpired) {
-      return { valid: false, error: "Token expired", refreshed: false };
+      const error = "Token expired";
+      return {
+        valid: false,
+        error,
+        refreshed: false,
+        diagnosis: classifyFailure({ error }),
+      };
     }
-    return { valid: true, error: null, refreshed: false, newTokens: null };
+    return {
+      valid: true,
+      error: null,
+      refreshed: false,
+      newTokens: null,
+      diagnosis: makeDiagnosis("ok", "local", null, null),
+    };
   }
 
   // Call test endpoint
@@ -174,7 +342,13 @@ async function testOAuthConnection(connection) {
     });
 
     if (res.ok) {
-      return { valid: true, error: null, refreshed, newTokens };
+      return {
+        valid: true,
+        error: null,
+        refreshed,
+        newTokens,
+        diagnosis: makeDiagnosis("ok", "upstream", null, null),
+      };
     }
 
     // If 401 and we haven't tried refresh yet, try refresh now
@@ -191,22 +365,55 @@ async function testOAuthConnection(connection) {
         });
 
         if (retryRes.ok) {
-          return { valid: true, error: null, refreshed: true, newTokens: tokens };
+          return {
+            valid: true,
+            error: null,
+            refreshed: true,
+            newTokens: tokens,
+            diagnosis: makeDiagnosis("ok", "upstream", null, null),
+          };
         }
+
+        const error = `API returned ${retryRes.status}`;
+        return {
+          valid: false,
+          error,
+          refreshed: true,
+          statusCode: retryRes.status,
+          diagnosis: classifyFailure({ error, statusCode: retryRes.status }),
+        };
       }
-      return { valid: false, error: "Token invalid or revoked", refreshed: false };
+      const error = "Token invalid or revoked";
+      return {
+        valid: false,
+        error,
+        refreshed: false,
+        statusCode: 401,
+        diagnosis: classifyFailure({ error, statusCode: 401, refreshFailed: true }),
+      };
     }
 
-    if (res.status === 401) {
-      return { valid: false, error: "Token invalid or revoked", refreshed };
-    }
-    if (res.status === 403) {
-      return { valid: false, error: "Access denied", refreshed };
-    }
+    const error = res.status === 401
+      ? "Token invalid or revoked"
+      : res.status === 403
+        ? "Access denied"
+        : `API returned ${res.status}`;
 
-    return { valid: false, error: `API returned ${res.status}`, refreshed };
+    return {
+      valid: false,
+      error,
+      refreshed,
+      statusCode: res.status,
+      diagnosis: classifyFailure({ error, statusCode: res.status }),
+    };
   } catch (err) {
-    return { valid: false, error: err.message, refreshed };
+    const error = toSafeMessage(err?.message, "Connection test failed");
+    return {
+      valid: false,
+      error,
+      refreshed,
+      diagnosis: classifyFailure({ error }),
+    };
   }
 }
 
@@ -215,7 +422,12 @@ async function testOAuthConnection(connection) {
  */
 async function testApiKeyConnection(connection) {
   if (!connection.apiKey) {
-    return { valid: false, error: "Missing API key" };
+    const error = "Missing API key";
+    return {
+      valid: false,
+      error,
+      diagnosis: makeDiagnosis("auth_missing", "local", error, "missing_api_key"),
+    };
   }
 
   const result = await validateProviderApiKey({
@@ -225,12 +437,23 @@ async function testApiKeyConnection(connection) {
   });
 
   if (result.unsupported) {
-    return { valid: false, error: "Provider test not supported" };
+    const error = "Provider test not supported";
+    return {
+      valid: false,
+      error,
+      diagnosis: classifyFailure({ error, unsupported: true }),
+    };
   }
+
+  const error = result.valid ? null : (result.error || "Invalid API key");
+  const diagnosis = result.valid
+    ? makeDiagnosis("ok", "upstream", null, null)
+    : classifyFailure({ error });
 
   return {
     valid: !!result.valid,
-    error: result.valid ? null : (result.error || "Invalid API key"),
+    error,
+    diagnosis,
   };
 }
 
@@ -245,19 +468,41 @@ export async function POST(request, { params }) {
     }
 
     let result;
+    const runtime = await getProviderRuntimeStatus(connection.provider);
 
-    if (connection.authType === "apikey") {
+    if (runtime?.diagnosis) {
+      result = {
+        valid: false,
+        error: runtime.error,
+        refreshed: false,
+        diagnosis: runtime.diagnosis,
+      };
+    } else if (connection.authType === "apikey") {
       result = await testApiKeyConnection(connection);
     } else {
       result = await testOAuthConnection(connection);
     }
 
     // Build update data
+    const now = new Date().toISOString();
+    const diagnosis = result.diagnosis || (result.valid
+      ? makeDiagnosis("ok", "local", null, null)
+      : classifyFailure({ error: result.error, statusCode: result.statusCode }));
+
     const updateData = {
       testStatus: result.valid ? "active" : "error",
       lastError: result.valid ? null : result.error,
-      lastErrorAt: result.valid ? null : new Date().toISOString(),
+      lastErrorAt: result.valid ? null : now,
+      lastTested: now,
+      lastErrorType: result.valid ? null : diagnosis.type,
+      lastErrorSource: result.valid ? null : diagnosis.source,
+      errorCode: result.valid ? null : (diagnosis.code || result.statusCode || null),
+      rateLimitedUntil: result.valid ? null : connection.rateLimitedUntil || null,
     };
+
+    if (result.valid) {
+      updateData.backoffLevel = 0;
+    }
 
     // If token was refreshed, update tokens in DB
     if (result.refreshed && result.newTokens) {
@@ -282,6 +527,9 @@ export async function POST(request, { params }) {
       valid: result.valid,
       error: result.error,
       refreshed: result.refreshed || false,
+      diagnosis,
+      statusCode: result.statusCode || null,
+      runtime: runtime || null,
     });
   } catch (error) {
     console.log("Error testing connection:", error);

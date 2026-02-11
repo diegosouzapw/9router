@@ -34,6 +34,26 @@ function getModelColor(index) {
   return MODEL_COLORS[index % MODEL_COLORS.length];
 }
 
+function maskSegment(value, start = 2, end = 2) {
+  if (!value) return "";
+  if (value.length <= start + end) return `${value.slice(0, 1)}***`;
+  return `${value.slice(0, start)}***${value.slice(-end)}`;
+}
+
+function maskApiKeyLabel(apiKeyName, apiKeyId) {
+  if (!apiKeyName && !apiKeyId) return "unknown";
+  const maskedName = apiKeyName ? maskSegment(apiKeyName, 2, 1) : "key";
+  if (!apiKeyId) return maskedName;
+  return `${maskedName} (${maskSegment(apiKeyId, 4, 4)})`;
+}
+
+function SortIndicator({ active, sortOrder }) {
+  if (!active) {
+    return <span className="material-symbols-outlined text-[12px] opacity-0 group-hover:opacity-30">unfold_more</span>;
+  }
+  return <span className="material-symbols-outlined text-[12px] text-primary">{sortOrder === "asc" ? "expand_less" : "expand_more"}</span>;
+}
+
 // ============================================================================
 // Sub-Components
 // ============================================================================
@@ -236,9 +256,32 @@ function DailyTrendChart({ dailyTrend }) {
 
 /** Donut Chart — Account distribution */
 function AccountDonut({ byAccount }) {
-  const total = useMemo(() => (byAccount || []).reduce((s, a) => s + a.totalTokens, 0), [byAccount]);
+  const data = useMemo(() => byAccount || [], [byAccount]);
+  const total = useMemo(() => data.reduce((s, a) => s + a.totalTokens, 0), [data]);
+  const hasData = data.length > 0;
 
-  if (!byAccount || byAccount.length === 0) {
+  const segments = useMemo(() => {
+    return data.slice(0, 8).reduce((acc, item, i) => {
+      const prevEnd = acc.length > 0 ? acc[acc.length - 1].endAngle : 0;
+      const pct = total > 0 ? item.totalTokens / total : 0;
+      const endAngle = prevEnd + pct * 360;
+      acc.push({
+        ...item,
+        pct,
+        startAngle: prevEnd,
+        endAngle,
+        color: getModelColor(i),
+      });
+      return acc;
+    }, []);
+  }, [data, total]);
+
+  const conicGradient = useMemo(() => {
+    if (!segments.length) return "conic-gradient(rgba(255,255,255,0.06) 0deg 360deg)";
+    return `conic-gradient(${segments.map((seg) => `${seg.color} ${seg.startAngle}deg ${seg.endAngle}deg`).join(", ")})`;
+  }, [segments]);
+
+  if (!hasData) {
     return (
       <Card className="p-4 flex-1">
         <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">By Account</h3>
@@ -246,26 +289,6 @@ function AccountDonut({ byAccount }) {
       </Card>
     );
   }
-
-  // Build SVG conic segments
-  const segments = useMemo(() => {
-    let cumAngle = 0;
-    return byAccount.slice(0, 8).map((a, i) => {
-      const pct = total > 0 ? a.totalTokens / total : 0;
-      const startAngle = cumAngle;
-      cumAngle += pct * 360;
-      return { ...a, pct, startAngle, endAngle: cumAngle, color: getModelColor(i) };
-    });
-  }, [byAccount, total]);
-
-  // Build conic gradient string
-  const conicGradient = useMemo(() => {
-    const stops = [];
-    for (const seg of segments) {
-      stops.push(`${seg.color} ${seg.startAngle}deg ${seg.endAngle}deg`);
-    }
-    return `conic-gradient(${stops.join(", ")})`;
-  }, [segments]);
 
   return (
     <Card className="p-4 flex-1">
@@ -294,6 +317,185 @@ function AccountDonut({ byAccount }) {
             </div>
           ))}
         </div>
+      </div>
+    </Card>
+  );
+}
+
+/** Donut Chart — API key distribution */
+function ApiKeyDonut({ byApiKey }) {
+  const data = useMemo(() => byApiKey || [], [byApiKey]);
+  const total = useMemo(() => data.reduce((s, a) => s + a.totalTokens, 0), [data]);
+  const hasData = data.length > 0;
+
+  const segments = useMemo(() => {
+    return data.slice(0, 8).reduce((acc, item, i) => {
+      const prevEnd = acc.length > 0 ? acc[acc.length - 1].endAngle : 0;
+      const pct = total > 0 ? item.totalTokens / total : 0;
+      const endAngle = prevEnd + pct * 360;
+      acc.push({
+        ...item,
+        pct,
+        startAngle: prevEnd,
+        endAngle,
+        color: getModelColor(i),
+        maskedLabel: maskApiKeyLabel(item.apiKeyName, item.apiKeyId),
+      });
+      return acc;
+    }, []);
+  }, [data, total]);
+
+  const conicGradient = useMemo(() => {
+    if (!segments.length) return "conic-gradient(rgba(255,255,255,0.06) 0deg 360deg)";
+    return `conic-gradient(${segments.map((seg) => `${seg.color} ${seg.startAngle}deg ${seg.endAngle}deg`).join(", ")})`;
+  }, [segments]);
+
+  if (!hasData) {
+    return (
+      <Card className="p-4 flex-1">
+        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">By API Key</h3>
+        <div className="text-center text-text-muted text-sm py-8">No data</div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-4 flex-1">
+      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">By API Key</h3>
+      <div className="flex items-center gap-6">
+        <div className="shrink-0 relative" style={{ width: 120, height: 120 }}>
+          <div className="w-full h-full rounded-full" style={{ background: conicGradient }} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-14 h-14 rounded-full bg-surface" />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
+          {segments.map((seg, i) => (
+            <div key={`${seg.apiKeyId || seg.apiKeyName || "key"}-${i}`} className="flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: seg.color }} />
+                <span className="truncate text-text-main" title={seg.apiKeyName || seg.apiKeyId || "unknown"}>
+                  {seg.maskedLabel}
+                </span>
+              </div>
+              <span className="font-mono font-medium text-text-muted shrink-0">{fmt(seg.totalTokens)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** API key breakdown table with filter + sorting */
+function ApiKeyTable({ byApiKey }) {
+  const [query, setQuery] = useState("");
+  const [sortBy, setSortBy] = useState("totalTokens");
+  const [sortOrder, setSortOrder] = useState("desc");
+
+  const data = useMemo(() => byApiKey || [], [byApiKey]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return data;
+    return data.filter((row) =>
+      (row.apiKeyName || "").toLowerCase().includes(q) ||
+      (row.apiKeyId || "").toLowerCase().includes(q)
+    );
+  }, [data, query]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      const va = a[sortBy] ?? 0;
+      const vb = b[sortBy] ?? 0;
+      if (typeof va === "string") {
+        return sortOrder === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+      }
+      return sortOrder === "asc" ? va - vb : vb - va;
+    });
+    return arr;
+  }, [filtered, sortBy, sortOrder]);
+
+  const toggleSort = useCallback((field) => {
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortBy(field);
+    setSortOrder("desc");
+  }, [sortBy]);
+
+  const hasData = data.length > 0;
+
+  if (!hasData) {
+    return (
+      <Card className="p-4 flex-1">
+        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">API Key Breakdown</h3>
+        <div className="text-center text-text-muted text-sm py-8">No data</div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="p-4 border-b border-border flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">API Key Breakdown</h3>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter API key..."
+          className="w-full max-w-[220px] px-3 py-1.5 rounded-lg bg-bg-subtle border border-border text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary"
+        />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-xs text-text-muted uppercase bg-black/[0.02] dark:bg-white/[0.02]">
+            <tr>
+              <th className="px-4 py-2.5 text-left cursor-pointer group" onClick={() => toggleSort("apiKeyName")}>
+                API Key <SortIndicator active={sortBy === "apiKeyName"} sortOrder={sortOrder} />
+              </th>
+              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("requests")}>
+                Requests <SortIndicator active={sortBy === "requests"} sortOrder={sortOrder} />
+              </th>
+              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("promptTokens")}>
+                Input <SortIndicator active={sortBy === "promptTokens"} sortOrder={sortOrder} />
+              </th>
+              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("completionTokens")}>
+                Output <SortIndicator active={sortBy === "completionTokens"} sortOrder={sortOrder} />
+              </th>
+              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("totalTokens")}>
+                Total Tokens <SortIndicator active={sortBy === "totalTokens"} sortOrder={sortOrder} />
+              </th>
+              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("cost")}>
+                Cost <SortIndicator active={sortBy === "cost"} sortOrder={sortOrder} />
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {sorted.map((row, i) => (
+              <tr key={`${row.apiKeyId || row.apiKeyName || "key"}-${i}`} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+                <td className="px-4 py-2.5">
+                  <span className="font-medium" title={row.apiKeyName || row.apiKeyId || "unknown"}>
+                    {maskApiKeyLabel(row.apiKeyName, row.apiKeyId)}
+                  </span>
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono text-text-muted">{fmtFull(row.requests)}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-primary">{fmt(row.promptTokens)}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-emerald-500">{fmt(row.completionTokens)}</td>
+                <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmt(row.totalTokens)}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-amber-500">{fmtCost(row.cost)}</td>
+              </tr>
+            ))}
+            {sorted.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-text-muted">No API key matches this filter.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </Card>
   );
@@ -450,11 +652,6 @@ function ModelTable({ byModel, summary }) {
     return arr;
   }, [byModel, sortBy, sortOrder]);
 
-  const SortIcon = ({ field }) => {
-    if (sortBy !== field) return <span className="material-symbols-outlined text-[12px] opacity-0 group-hover:opacity-30">unfold_more</span>;
-    return <span className="material-symbols-outlined text-[12px] text-primary">{sortOrder === "asc" ? "expand_less" : "expand_more"}</span>;
-  };
-
   return (
     <Card className="overflow-hidden">
       <div className="p-4 border-b border-border">
@@ -465,19 +662,19 @@ function ModelTable({ byModel, summary }) {
           <thead className="text-xs text-text-muted uppercase bg-black/[0.02] dark:bg-white/[0.02]">
             <tr>
               <th className="px-4 py-2.5 text-left cursor-pointer group" onClick={() => toggleSort("model")}>
-                Model <SortIcon field="model" />
+                Model <SortIndicator active={sortBy === "model"} sortOrder={sortOrder} />
               </th>
               <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("requests")}>
-                Requests <SortIcon field="requests" />
+                Requests <SortIndicator active={sortBy === "requests"} sortOrder={sortOrder} />
               </th>
               <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("promptTokens")}>
-                Input <SortIcon field="promptTokens" />
+                Input <SortIndicator active={sortBy === "promptTokens"} sortOrder={sortOrder} />
               </th>
               <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("completionTokens")}>
-                Output <SortIcon field="completionTokens" />
+                Output <SortIndicator active={sortBy === "completionTokens"} sortOrder={sortOrder} />
               </th>
               <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("totalTokens")}>
-                Total <SortIcon field="totalTokens" />
+                Total <SortIndicator active={sortBy === "totalTokens"} sortOrder={sortOrder} />
               </th>
               <th className="px-4 py-2.5 text-right w-36">Share</th>
             </tr>
@@ -606,11 +803,12 @@ export default function UsageAnalytics() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <StatCard icon="generating_tokens" label="Total Tokens" value={fmt(s.totalTokens)} subValue={`${fmtFull(s.totalRequests)} requests`} />
         <StatCard icon="input" label="Input Tokens" value={fmt(s.promptTokens)} color="text-primary" />
         <StatCard icon="output" label="Output Tokens" value={fmt(s.completionTokens)} color="text-emerald-500" />
         <StatCard icon="group" label="Accounts" value={s.uniqueAccounts || 0} />
+        <StatCard icon="vpn_key" label="API Keys" value={s.uniqueApiKeys || 0} />
         <StatCard icon="model_training" label="Models" value={s.uniqueModels || 0} />
       </div>
 
@@ -627,6 +825,12 @@ export default function UsageAnalytics() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <DailyTrendChart dailyTrend={analytics?.dailyTrend} />
         <AccountDonut byAccount={analytics?.byAccount} />
+      </div>
+
+      {/* API Key Graph + Table */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <ApiKeyDonut byApiKey={analytics?.byApiKey} />
+        <ApiKeyTable byApiKey={analytics?.byApiKey} />
       </div>
 
       {/* Model Breakdown Table */}

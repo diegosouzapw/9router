@@ -22,6 +22,7 @@ export default function ProviderDetailPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
+  const [retestingId, setRetestingId] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
   const [headerImgError, setHeaderImgError] = useState(false);
   const { copied, copy } = useCopyToClipboard();
@@ -248,6 +249,24 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.error("Error toggling rate limit:", error);
+    }
+  };
+
+  const handleRetestConnection = async (connectionId) => {
+    if (!connectionId || retestingId) return;
+    setRetestingId(connectionId);
+    try {
+      const res = await fetch(`/api/providers/${connectionId}/test`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to retest connection");
+        return;
+      }
+      await fetchConnections();
+    } catch (error) {
+      console.error("Error retesting connection:", error);
+    } finally {
+      setRetestingId(null);
     }
   };
 
@@ -527,6 +546,8 @@ export default function ProviderDetailPage() {
                 onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
                 onToggleRateLimit={(enabled) => handleToggleRateLimit(conn.id, enabled)}
+                onRetest={() => handleRetestConnection(conn.id)}
+                isRetesting={retestingId === conn.id}
                 onEdit={() => {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
@@ -1122,7 +1143,124 @@ CooldownTimer.propTypes = {
   until: PropTypes.string.isRequired,
 };
 
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onToggleRateLimit, onEdit, onDelete }) {
+const ERROR_TYPE_LABELS = {
+  runtime_error: { label: "Local runtime", variant: "warning" },
+  upstream_auth_error: { label: "Upstream auth", variant: "error" },
+  auth_missing: { label: "Missing credential", variant: "warning" },
+  token_refresh_failed: { label: "Refresh failed", variant: "warning" },
+  token_expired: { label: "Token expired", variant: "warning" },
+  upstream_rate_limited: { label: "Rate limited", variant: "warning" },
+  upstream_unavailable: { label: "Upstream unavailable", variant: "error" },
+  network_error: { label: "Network error", variant: "warning" },
+  unsupported: { label: "Test unsupported", variant: "default" },
+  upstream_error: { label: "Upstream error", variant: "error" },
+};
+
+function inferErrorType(connection, isCooldown) {
+  if (isCooldown) return "upstream_rate_limited";
+  if (connection.lastErrorType) return connection.lastErrorType;
+
+  const code = Number(connection.errorCode);
+  if (code === 401 || code === 403) return "upstream_auth_error";
+  if (code === 429) return "upstream_rate_limited";
+  if (code >= 500) return "upstream_unavailable";
+
+  const msg = (connection.lastError || "").toLowerCase();
+  if (!msg) return null;
+  if (msg.includes("runtime") || msg.includes("not runnable") || msg.includes("not installed") || msg.includes("healthcheck")) return "runtime_error";
+  if (msg.includes("refresh failed")) return "token_refresh_failed";
+  if (msg.includes("token expired") || msg.includes("expired")) return "token_expired";
+  if (msg.includes("invalid api key") || msg.includes("token invalid") || msg.includes("revoked") || msg.includes("access denied") || msg.includes("unauthorized")) return "upstream_auth_error";
+  if (msg.includes("rate limit") || msg.includes("quota") || msg.includes("too many requests") || msg.includes("429")) return "upstream_rate_limited";
+  if (msg.includes("fetch failed") || msg.includes("network") || msg.includes("timeout") || msg.includes("econn") || msg.includes("enotfound")) return "network_error";
+  if (msg.includes("not supported")) return "unsupported";
+  return "upstream_error";
+}
+
+function getStatusPresentation(connection, effectiveStatus, isCooldown) {
+  if (connection.isActive === false) {
+    return {
+      statusVariant: "default",
+      statusLabel: "disabled",
+      errorType: null,
+      errorBadge: null,
+      errorTextClass: "text-text-muted",
+    };
+  }
+
+  if (effectiveStatus === "active" || effectiveStatus === "success") {
+    return {
+      statusVariant: "success",
+      statusLabel: "connected",
+      errorType: null,
+      errorBadge: null,
+      errorTextClass: "text-text-muted",
+    };
+  }
+
+  const errorType = inferErrorType(connection, isCooldown);
+  const errorBadge = errorType ? ERROR_TYPE_LABELS[errorType] || null : null;
+
+  if (errorType === "runtime_error") {
+    return {
+      statusVariant: "warning",
+      statusLabel: "runtime issue",
+      errorType,
+      errorBadge,
+      errorTextClass: "text-yellow-600 dark:text-yellow-400",
+    };
+  }
+
+  if (errorType === "upstream_auth_error" || errorType === "auth_missing" || errorType === "token_refresh_failed" || errorType === "token_expired") {
+    return {
+      statusVariant: "error",
+      statusLabel: "auth failed",
+      errorType,
+      errorBadge,
+      errorTextClass: "text-red-500",
+    };
+  }
+
+  if (errorType === "upstream_rate_limited") {
+    return {
+      statusVariant: "warning",
+      statusLabel: "rate limited",
+      errorType,
+      errorBadge,
+      errorTextClass: "text-yellow-600 dark:text-yellow-400",
+    };
+  }
+
+  if (errorType === "network_error") {
+    return {
+      statusVariant: "warning",
+      statusLabel: "network issue",
+      errorType,
+      errorBadge,
+      errorTextClass: "text-yellow-600 dark:text-yellow-400",
+    };
+  }
+
+  if (errorType === "unsupported") {
+    return {
+      statusVariant: "default",
+      statusLabel: "test unsupported",
+      errorType,
+      errorBadge,
+      errorTextClass: "text-text-muted",
+    };
+  }
+
+  return {
+    statusVariant: "error",
+    statusLabel: effectiveStatus || "error",
+    errorType,
+    errorBadge,
+    errorTextClass: "text-red-500",
+  };
+}
+
+function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onToggleRateLimit, onRetest, isRetesting, onEdit, onDelete }) {
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
@@ -1150,13 +1288,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
     ? "active"  // Cooldown expired → treat as active
     : connection.testStatus;
 
-  const getStatusVariant = () => {
-    if (connection.isActive === false) return "default";
-    if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
-    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
-    return "default";
-  };
-
+  const statusPresentation = getStatusPresentation(connection, effectiveStatus, isCooldown);
   const rateLimitEnabled = !!connection.rateLimitProtection;
 
   return (
@@ -1185,12 +1317,17 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
+            <Badge variant={statusPresentation.statusVariant} size="sm" dot>
+              {statusPresentation.statusLabel}
             </Badge>
             {isCooldown && connection.isActive !== false && <CooldownTimer until={connection.rateLimitedUntil} />}
+            {statusPresentation.errorBadge && connection.isActive !== false && (
+              <Badge variant={statusPresentation.errorBadge.variant} size="sm">
+                {statusPresentation.errorBadge.label}
+              </Badge>
+            )}
             {connection.lastError && connection.isActive !== false && (
-              <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
+              <span className={`text-xs truncate max-w-[300px] ${statusPresentation.errorTextClass}`} title={connection.lastError}>
                 {connection.lastError}
               </span>
             )}
@@ -1216,6 +1353,18 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="refresh"
+          loading={isRetesting}
+          disabled={connection.isActive === false}
+          onClick={onRetest}
+          className="!h-7 !px-2 text-xs"
+          title="Retest authentication"
+        >
+          Retest
+        </Button>
         <Toggle
           size="sm"
           checked={connection.isActive ?? true}
@@ -1247,6 +1396,9 @@ ConnectionRow.propTypes = {
     isActive: PropTypes.bool,
     priority: PropTypes.number,
     lastError: PropTypes.string,
+    lastErrorType: PropTypes.string,
+    lastErrorSource: PropTypes.string,
+    errorCode: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     globalPriority: PropTypes.number,
   }).isRequired,
   isOAuth: PropTypes.bool.isRequired,
@@ -1256,6 +1408,8 @@ ConnectionRow.propTypes = {
   onMoveDown: PropTypes.func.isRequired,
   onToggleActive: PropTypes.func.isRequired,
   onToggleRateLimit: PropTypes.func.isRequired,
+  onRetest: PropTypes.func.isRequired,
+  isRetesting: PropTypes.bool,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
 };
@@ -1421,9 +1575,17 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
     try {
       const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
       const data = await res.json();
-      setTestResult(data.valid ? "success" : "failed");
+      setTestResult({
+        valid: !!data.valid,
+        diagnosis: data.diagnosis || null,
+        message: data.error || null,
+      });
     } catch {
-      setTestResult("failed");
+      setTestResult({
+        valid: false,
+        diagnosis: { type: "network_error" },
+        message: "Failed to test connection",
+      });
     } finally {
       setTesting(false);
     }
@@ -1477,6 +1639,10 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
           updates.testStatus = "active";
           updates.lastError = null;
           updates.lastErrorAt = null;
+          updates.lastErrorType = null;
+          updates.lastErrorSource = null;
+          updates.errorCode = null;
+          updates.rateLimitedUntil = null;
         }
       }
       await onSave(updates);
@@ -1489,6 +1655,9 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
 
   const isOAuth = connection.authType === "oauth";
   const isCompatible = isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider);
+  const testErrorMeta = !testResult?.valid && testResult?.diagnosis?.type
+    ? (ERROR_TYPE_LABELS[testResult.diagnosis.type] || null)
+    : null;
 
   return (
     <Modal isOpen={isOpen} title="Edit Connection" onClose={onClose}>
@@ -1553,9 +1722,16 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
               {testing ? "Testing..." : "Test Connection"}
             </Button>
             {testResult && (
-              <Badge variant={testResult === "success" ? "success" : "error"}>
-                {testResult === "success" ? "Valid" : "Failed"}
-              </Badge>
+              <>
+                <Badge variant={testResult.valid ? "success" : "error"}>
+                  {testResult.valid ? "Valid" : "Failed"}
+                </Badge>
+                {testErrorMeta && (
+                  <Badge variant={testErrorMeta.variant}>
+                    {testErrorMeta.label}
+                  </Badge>
+                )}
+              </>
             )}
           </div>
         )}

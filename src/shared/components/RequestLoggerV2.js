@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Card from "./Card";
 
 // Protocol badge colors
@@ -72,18 +72,39 @@ function maskAccount(account) {
   return account;
 }
 
+function maskSegment(value, start = 2, end = 2) {
+  if (!value) return "";
+  if (value.length <= start + end) return `${value.slice(0, 1)}***`;
+  return `${value.slice(0, start)}***${value.slice(-end)}`;
+}
+
+function formatApiKeyLabel(apiKeyName, apiKeyId) {
+  if (!apiKeyName && !apiKeyId) return "—";
+  const maskedName = apiKeyName ? maskSegment(apiKeyName, 2, 1) : "key";
+  if (!apiKeyId) return maskedName;
+  return `${maskedName} (${maskSegment(apiKeyId, 4, 4)})`;
+}
+
+function getLogTotalTokens(log) {
+  return (log?.tokens?.in || 0) + (log?.tokens?.out || 0);
+}
+
 export default function RequestLoggerV2() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [recording, setRecording] = useState(true);
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
+  const [selectedModel, setSelectedModel] = useState("");
   const [selectedAccount, setSelectedAccount] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
+  const [selectedApiKey, setSelectedApiKey] = useState("");
+  const [sortBy, setSortBy] = useState("newest");
   const [selectedLog, setSelectedLog] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState(null);
   const intervalRef = useRef(null);
+  const hasLoadedRef = useRef(false);
 
   const fetchLogs = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -92,8 +113,11 @@ export default function RequestLoggerV2() {
       if (search) params.set("search", search);
       if (activeFilter === "error") params.set("status", "error");
       if (activeFilter === "ok") params.set("status", "ok");
+      if (activeFilter === "combo") params.set("combo", "1");
+      if (selectedModel) params.set("model", selectedModel);
       if (selectedProvider) params.set("provider", selectedProvider);
       if (selectedAccount) params.set("account", selectedAccount);
+      if (selectedApiKey) params.set("apiKey", selectedApiKey);
       params.set("limit", "300");
 
       const res = await fetch(`/api/usage/call-logs?${params}`);
@@ -106,17 +130,13 @@ export default function RequestLoggerV2() {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [search, activeFilter, selectedAccount, selectedProvider]);
+  }, [search, activeFilter, selectedModel, selectedAccount, selectedProvider, selectedApiKey]);
 
-  // Initial load
   useEffect(() => {
-    fetchLogs(true);
-  }, []);
-
-  // Refetch when filters change
-  useEffect(() => {
-    fetchLogs(false);
-  }, [search, activeFilter, selectedAccount, selectedProvider]);
+    const showLoading = !hasLoadedRef.current;
+    hasLoadedRef.current = true;
+    fetchLogs(showLoading);
+  }, [fetchLogs]);
 
   // Auto-refresh
   useEffect(() => {
@@ -127,8 +147,42 @@ export default function RequestLoggerV2() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [recording, fetchLogs]);
   
-  // Client-side combo filter
-  const filteredLogs = activeFilter === "combo" ? logs.filter(l => l.comboName) : logs;
+  const filteredLogs = useMemo(() => {
+    if (activeFilter === "combo") return logs.filter(l => l.comboName);
+    return logs;
+  }, [activeFilter, logs]);
+
+  const sortedLogs = useMemo(() => {
+    const arr = [...filteredLogs];
+
+    arr.sort((a, b) => {
+      switch (sortBy) {
+        case "oldest":
+          return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+        case "tokens_desc":
+          return getLogTotalTokens(b) - getLogTotalTokens(a);
+        case "tokens_asc":
+          return getLogTotalTokens(a) - getLogTotalTokens(b);
+        case "duration_desc":
+          return (b.duration || 0) - (a.duration || 0);
+        case "duration_asc":
+          return (a.duration || 0) - (b.duration || 0);
+        case "status_desc":
+          return (b.status || 0) - (a.status || 0);
+        case "status_asc":
+          return (a.status || 0) - (b.status || 0);
+        case "model_asc":
+          return (a.model || "").localeCompare(b.model || "");
+        case "model_desc":
+          return (b.model || "").localeCompare(a.model || "");
+        case "newest":
+        default:
+          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      }
+    });
+
+    return arr;
+  }, [filteredLogs, sortBy]);
 
   // Fetch log detail
   const openDetail = async (logEntry) => {
@@ -178,14 +232,20 @@ export default function RequestLoggerV2() {
 
   // Unique accounts and providers for dropdowns
   const uniqueAccounts = [...new Set(logs.map(l => l.account).filter(a => a && a !== "-"))];
+  const uniqueModels = [...new Set(logs.map(l => l.model).filter(Boolean))].sort();
   const uniqueProviders = [...new Set(logs.map(l => l.provider).filter(p => p && p !== "-"))].sort();
-  const uniqueCombos = [...new Set(logs.map(l => l.comboName).filter(Boolean))].sort();
+  const uniqueApiKeys = [...new Set(
+    logs
+      .map((l) => l.apiKeyId || l.apiKeyName)
+      .filter(Boolean)
+  )].sort();
 
   // Stats
   const totalCount = filteredLogs.length;
   const okCount = filteredLogs.filter(l => l.status >= 200 && l.status < 300).length;
   const errorCount = filteredLogs.filter(l => l.status >= 400).length;
   const comboCount = logs.filter(l => l.comboName).length;
+  const apiKeyCount = uniqueApiKeys.length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -209,7 +269,7 @@ export default function RequestLoggerV2() {
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[18px]">search</span>
           <input
             type="text"
-            placeholder="Search model, provider, account, combo..."
+            placeholder="Search model, provider, account, API key, combo..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary"
@@ -229,6 +289,18 @@ export default function RequestLoggerV2() {
           })}
         </select>
 
+        {/* Model Dropdown */}
+        <select
+          value={selectedModel}
+          onChange={(e) => setSelectedModel(e.target.value)}
+          className="px-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary focus:outline-none focus:border-primary appearance-none cursor-pointer min-w-[180px]"
+        >
+          <option value="">All Models</option>
+          {uniqueModels.map((model) => (
+            <option key={model} value={model}>{model}</option>
+          ))}
+        </select>
+
         {/* Account Dropdown */}
         <select
           value={selectedAccount}
@@ -239,6 +311,20 @@ export default function RequestLoggerV2() {
           {uniqueAccounts.map(a => (
             <option key={a} value={a}>{a}</option>
           ))}
+        </select>
+
+        {/* API Key Dropdown */}
+        <select
+          value={selectedApiKey}
+          onChange={(e) => setSelectedApiKey(e.target.value)}
+          className="px-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary focus:outline-none focus:border-primary appearance-none cursor-pointer min-w-[160px]"
+        >
+          <option value="">All API Keys</option>
+          {uniqueApiKeys.map((value) => {
+            const matched = logs.find((l) => (l.apiKeyId || l.apiKeyName) === value);
+            const label = formatApiKeyLabel(matched?.apiKeyName, matched?.apiKeyId);
+            return <option key={value} value={value}>{label}</option>;
+          })}
         </select>
 
         {/* Stats */}
@@ -259,7 +345,34 @@ export default function RequestLoggerV2() {
               {comboCount} combo
             </span>
           )}
+          {apiKeyCount > 0 && (
+            <span className="px-2 py-1 rounded bg-primary/10 text-primary font-mono">
+              {apiKeyCount} keys
+            </span>
+          )}
+          <span className="px-2 py-1 rounded bg-bg-subtle border border-border font-mono">
+            {sortedLogs.length} shown
+          </span>
         </div>
+
+        {/* Sort Dropdown */}
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="px-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary focus:outline-none focus:border-primary appearance-none cursor-pointer min-w-[150px]"
+          title="Sort logs"
+        >
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="tokens_desc">Tokens ↓</option>
+          <option value="tokens_asc">Tokens ↑</option>
+          <option value="duration_desc">Duration ↓</option>
+          <option value="duration_asc">Duration ↑</option>
+          <option value="status_desc">Status ↓</option>
+          <option value="status_asc">Status ↑</option>
+          <option value="model_asc">Model A-Z</option>
+          <option value="model_desc">Model Z-A</option>
+        </select>
 
         {/* Refresh */}
         <button
@@ -326,6 +439,10 @@ export default function RequestLoggerV2() {
               <span className="material-symbols-outlined text-[48px] mb-2 block opacity-40">receipt_long</span>
               No logs recorded yet. Make some API calls to see them here.
             </div>
+          ) : sortedLogs.length === 0 ? (
+            <div className="p-8 text-center text-text-muted">
+              No logs match the current filters.
+            </div>
           ) : (
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-10" style={{ backgroundColor: "var(--bg-primary, #0f1117)" }}>
@@ -335,6 +452,7 @@ export default function RequestLoggerV2() {
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Provider</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Protocol</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Account</th>
+                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">API Key</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Combo</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Tokens</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Duration</th>
@@ -342,7 +460,7 @@ export default function RequestLoggerV2() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/30">
-                {filteredLogs.map((log) => {
+                {sortedLogs.map((log) => {
                   const statusStyle = getStatusStyle(log.status);
                   const protocolKey = log.sourceFormat || log.provider;
                   const protocol = PROTOCOL_COLORS[protocolKey] || PROTOCOL_COLORS[log.provider] || { bg: "#6B7280", text: "#fff", label: (protocolKey || log.provider || "-").toUpperCase() };
@@ -383,6 +501,12 @@ export default function RequestLoggerV2() {
                       <td className="px-3 py-2 text-text-muted truncate max-w-[120px]" title={log.account}>
                         {maskAccount(log.account)}
                       </td>
+                      <td
+                        className="px-3 py-2 text-text-muted truncate max-w-[140px]"
+                        title={log.apiKeyName || log.apiKeyId || "No API key"}
+                      >
+                        {formatApiKeyLabel(log.apiKeyName, log.apiKeyId)}
+                      </td>
                       <td className="px-3 py-2">
                         {log.comboName ? (
                           <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
@@ -411,7 +535,7 @@ export default function RequestLoggerV2() {
       </Card>
 
       <div className="text-[10px] text-text-muted italic">
-        Call logs are also saved as JSON files to <code>~/.9router/call_logs/</code> with 7-day rotation.
+        Call logs are also saved as JSON files to <code>{`{DATA_DIR}/call_logs/`}</code> with 7-day rotation.
       </div>
 
       {/* Detail Modal */}
@@ -531,6 +655,15 @@ function DetailModal({ log, detail, loading, onClose, onCopy }) {
             <div>
               <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Account</div>
               <div className="text-sm font-medium">{detail?.account || log.account || "-"}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">API Key</div>
+              <div
+                className="text-sm font-medium"
+                title={detail?.apiKeyName || detail?.apiKeyId || log.apiKeyName || log.apiKeyId || "No API key"}
+              >
+                {formatApiKeyLabel(detail?.apiKeyName || log.apiKeyName, detail?.apiKeyId || log.apiKeyId)}
+              </div>
             </div>
             <div>
               <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Combo</div>

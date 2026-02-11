@@ -227,6 +227,7 @@ export const REGISTRY = {
       { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
       { id: "gemini-3-pro-high", name: "Gemini 3 Pro High" },
       { id: "gemini-3-pro-low", name: "Gemini 3 Pro Low" },
+      { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
       { id: "gemini-3-flash", name: "Gemini 3 Flash" },
       { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
     ],
@@ -238,6 +239,7 @@ export const REGISTRY = {
     format: "openai",
     executor: "github",
     baseUrl: "https://api.githubcopilot.com/chat/completions",
+    responsesBaseUrl: "https://api.githubcopilot.com/responses",
     authType: "oauth",
     authHeader: "bearer",
     headers: {
@@ -254,25 +256,30 @@ export const REGISTRY = {
     },
     models: [
       { id: "gpt-4.1", name: "GPT-4.1" },
+      { id: "gpt-4o", name: "GPT-4o" },
+      { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+      { id: "gpt-4", name: "GPT-4" },
+      { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo" },
       { id: "gpt-5", name: "GPT-5" },
       { id: "gpt-5-mini", name: "GPT-5 Mini" },
-      { id: "gpt-5-codex", name: "GPT-5 Codex" },
+      { id: "gpt-5-codex", name: "GPT-5 Codex", targetFormat: "openai-responses" },
       { id: "gpt-5.1", name: "GPT-5.1" },
-      { id: "gpt-5.1-codex", name: "GPT-5.1 Codex" },
-      { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
-      { id: "gpt-5.1-codex-max", name: "GPT-5.1 Codex Max" },
+      { id: "gpt-5.1-codex", name: "GPT-5.1 Codex", targetFormat: "openai-responses" },
+      { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini", targetFormat: "openai-responses" },
+      { id: "gpt-5.1-codex-max", name: "GPT-5.1 Codex Max", targetFormat: "openai-responses" },
       { id: "gpt-5.2", name: "GPT-5.2" },
-      { id: "gpt-5.2-codex", name: "GPT-5.2 Codex" },
+      { id: "gpt-5.2-codex", name: "GPT-5.2 Codex", targetFormat: "openai-responses" },
       { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
       { id: "claude-opus-4.1", name: "Claude Opus 4.1" },
+      { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
       { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5 (Full ID)" },
       { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
       { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-      { id: "gemini-3-flash", name: "Gemini 3 Flash" },
-      { id: "gemini-3-pro", name: "Gemini 3 Pro" },
+      { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
+      { id: "gemini-3-pro-preview", name: "Gemini 3 Pro Preview" },
       { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
-      { id: "raptor-mini", name: "Raptor Mini" },
+      { id: "oswe-vscode-prime", name: "Raptor Mini" },
     ],
   },
 
@@ -440,6 +447,7 @@ export const REGISTRY = {
       clientIdEnv: "KIMI_CODING_OAUTH_CLIENT_ID",
       clientIdDefault: "17e5f671-d194-4dfb-9706-5516cb48c098",
       tokenUrl: "https://auth.kimi.com/api/oauth/token",
+      refreshUrl: "https://auth.kimi.com/api/oauth/token",
       authUrl: "https://auth.kimi.com/api/oauth/device_authorization"
     },
     models: [
@@ -484,6 +492,11 @@ export const REGISTRY = {
     authType: "oauth",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
+    oauth: {
+      tokenUrl: "https://api.cline.bot/api/v1/auth/token",
+      refreshUrl: "https://api.cline.bot/api/v1/auth/refresh",
+      authUrl: "https://api.cline.bot/api/v1/auth/authorize"
+    },
     extraHeaders: {
       "HTTP-Referer": "https://cline.bot",
       "X-Title": "Cline",
@@ -744,9 +757,18 @@ export function generateLegacyProviders() {
     } else if (entry.baseUrl) {
       p.baseUrl = entry.baseUrl;
     }
+    if (entry.responsesBaseUrl) {
+      p.responsesBaseUrl = entry.responsesBaseUrl;
+    }
 
     // Headers
-    if (entry.headers) p.headers = { ...entry.headers };
+    const mergedHeaders = {
+      ...(entry.headers || {}),
+      ...(entry.extraHeaders || {}),
+    };
+    if (Object.keys(mergedHeaders).length > 0) {
+      p.headers = mergedHeaders;
+    }
 
     // OAuth
     if (entry.oauth) {
@@ -757,6 +779,7 @@ export function generateLegacyProviders() {
         p.clientSecret = process.env[entry.oauth.clientSecretEnv] || entry.oauth.clientSecretDefault;
       }
       if (entry.oauth.tokenUrl) p.tokenUrl = entry.oauth.tokenUrl;
+      if (entry.oauth.refreshUrl) p.refreshUrl = entry.oauth.refreshUrl;
       if (entry.oauth.authUrl) p.authUrl = entry.oauth.authUrl;
     }
 

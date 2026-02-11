@@ -61,7 +61,8 @@ const CLI_TOOLS = {
     defaultCommand: "cline",
     envBinKey: "CLI_CLINE_BIN",
     requiresBinary: true,
-    healthcheckTimeoutMs: 4000,
+    // Cline startup/version check can take >4s on some environments.
+    healthcheckTimeoutMs: 12000,
     paths: {
       globalState: ".cline/data/globalState.json",
       secrets: ".cline/data/secrets.json",

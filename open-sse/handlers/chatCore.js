@@ -14,7 +14,7 @@ import { saveRequestUsage, trackPendingRequest, appendRequestLog, saveCallLog } 
 import { getExecutor } from "../executors/index.js";
 import { translateNonStreamingResponse } from "./responseTranslator.js";
 import { extractUsageFromResponse } from "./usageExtractor.js";
-import { parseSSEToOpenAIResponse } from "./sseParser.js";
+import { parseSSEToOpenAIResponse, parseSSEToResponsesOutput } from "./sseParser.js";
 import { withRateLimit, updateFromHeaders, initializeRateLimits } from "../services/rateLimitManager.js";
 
 
@@ -30,8 +30,9 @@ import { withRateLimit, updateFromHeaders, initializeRateLimits } from "../servi
  * @param {function} options.onRequestSuccess - Callback when request succeeds (to clear error status)
  * @param {function} options.onDisconnect - Callback when client disconnects
  * @param {string} options.connectionId - Connection ID for usage tracking
+ * @param {object} options.apiKeyInfo - API key metadata for usage attribution
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, comboName }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, apiKeyInfo = null, userAgent, comboName }) {
   const { provider, model } = modelInfo;
   const startTime = Date.now();
 
@@ -39,6 +40,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   await initializeRateLimits();
 
   const sourceFormat = detectFormat(body);
+  const endpointPath = (clientRawRequest?.endpoint || "").toLowerCase();
+  const isResponsesEndpoint = endpointPath.endsWith("/responses");
 
   // Check for bypass patterns (warmup, skip) - return fake response
   const bypassResponse = handleBypassRequest(body, model, userAgent);
@@ -173,6 +176,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       status: error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY,
       model, provider, connectionId, duration: Date.now() - startTime,
       requestBody: body, error: error.message, sourceFormat, targetFormat, comboName,
+      apiKeyId: apiKeyInfo?.id || null,
+      apiKeyName: apiKeyInfo?.name || null,
     }).catch(() => {});
     if (error.name === "AbortError") {
       streamController.handleError(error);
@@ -234,6 +239,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       method: "POST", path: clientRawRequest?.endpoint || "/v1/chat/completions",
       status: statusCode, model, provider, connectionId, duration: Date.now() - startTime,
       requestBody: body, error: message, sourceFormat, targetFormat, comboName,
+      apiKeyId: apiKeyInfo?.id || null,
+      apiKeyName: apiKeyInfo?.name || null,
     }).catch(() => {});
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
@@ -256,20 +263,30 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Non-streaming response
   if (!stream) {
     trackPendingRequest(model, provider, connectionId, false);
-    const contentType = providerResponse.headers.get("content-type") || "";
+    const contentType = (providerResponse.headers.get("content-type") || "").toLowerCase();
     let responseBody;
+    const rawBody = await providerResponse.text();
+    const looksLikeSSE = contentType.includes("text/event-stream") || /(^|\n)\s*(event|data):/m.test(rawBody);
 
-    if (contentType.includes("text/event-stream")) {
+    if (looksLikeSSE) {
       // Upstream returned SSE even though stream=false; convert best-effort to JSON.
-      const sseText = await providerResponse.text();
-      const parsedFromSSE = parseSSEToOpenAIResponse(sseText, model);
+      const parsedFromSSE = targetFormat === FORMATS.OPENAI_RESPONSES
+        ? parseSSEToResponsesOutput(rawBody, model)
+        : parseSSEToOpenAIResponse(rawBody, model);
+
       if (!parsedFromSSE) {
         appendRequestLog({ model, provider, connectionId, status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
       }
+
       responseBody = parsedFromSSE;
     } else {
-      responseBody = await providerResponse.json();
+      try {
+        responseBody = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        appendRequestLog({ model, provider, connectionId, status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid JSON response from provider");
+      }
     }
 
     // Notify success - caller can clear error status if needed
@@ -296,6 +313,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       sourceFormat,
       targetFormat,
       comboName,
+      apiKeyId: apiKeyInfo?.id || null,
+      apiKeyName: apiKeyInfo?.name || null,
     }).catch(() => {});
     if (usage && typeof usage === 'object') {
       const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [USAGE] ${provider.toUpperCase()} | in=${usage?.prompt_tokens || 0} | out=${usage?.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
@@ -306,7 +325,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         model: model || "unknown",
         tokens: usage,
         timestamp: new Date().toISOString(),
-        connectionId: connectionId || undefined
+        connectionId: connectionId || undefined,
+        apiKeyId: apiKeyInfo?.id || undefined,
+        apiKeyName: apiKeyInfo?.name || undefined,
       }).catch(err => {
         console.error("Failed to save usage stats:", err.message);
       });
@@ -373,6 +394,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       sourceFormat,
       targetFormat,
       comboName,
+      apiKeyId: apiKeyInfo?.id || null,
+      apiKeyName: apiKeyInfo?.name || null,
     }).catch(() => {});
   };
 
@@ -380,20 +403,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // UNLESS client is Droid CLI which expects openai-responses format back
   const isDroidCLI = userAgent?.toLowerCase().includes('droid') || userAgent?.toLowerCase().includes('codex-cli');
   const needsCodexTranslation = provider === 'codex'
-    && targetFormat === 'openai-responses'
+    && targetFormat === FORMATS.OPENAI_RESPONSES
+    && sourceFormat === FORMATS.OPENAI
+    && !isResponsesEndpoint
     && !isDroidCLI;
 
   if (needsCodexTranslation) {
     // Codex returns openai-responses, translate to openai (Chat Completions) that clients expect
     log?.debug?.("STREAM", `Codex translation mode: openai-responses → openai`);
-    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete);
+    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKeyInfo);
   } else if (needsTranslation(targetFormat, sourceFormat)) {
     // Standard translation for other providers
     log?.debug?.("STREAM", `Translation mode: ${targetFormat} → ${sourceFormat}`);
-    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete);
+    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKeyInfo);
   } else {
     log?.debug?.("STREAM", `Standard passthrough mode`);
-    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete);
+    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKeyInfo);
   }
 
   // Pipe response through transform with disconnect detection

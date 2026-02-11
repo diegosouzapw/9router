@@ -30,23 +30,25 @@ export class AntigravityExecutor extends BaseExecutor {
     const projectId = credentials?.projectId || this.generateProjectId();
     
     // Fix contents for Claude models via Antigravity
-    const contents = body.request?.contents?.map(c => {
+    const normalizedContents = body.request?.contents?.map(c => {
       let role = c.role;
       // functionResponse must be role "user" for Claude models
       if (c.parts?.some(p => p.functionResponse)) {
         role = "user";
       }
-      // Strip thought parts (no valid signature → provider rejects)
-      const parts = c.parts?.filter(p => !p.thought && !p.thoughtSignature);
-      if (role !== c.role || parts?.length !== c.parts?.length) {
-        return { ...c, role, parts };
-      }
-      return c;
-    });
+
+      // Strip thought parts (no valid signature -> provider rejects).
+      // Also drop entries that become empty after filtering, which can trigger
+      // 400 invalid argument on Gemini 3 Flash through Antigravity.
+      const parts = c.parts?.filter(p => !p.thought && !p.thoughtSignature) || [];
+      return { ...c, role, parts };
+    }) || [];
+
+    const contents = normalizedContents.filter(c => Array.isArray(c.parts) ? c.parts.length > 0 : true);
 
     const transformedRequest = {
       ...body.request,
-      ...(contents && { contents }),
+      ...(contents.length > 0 && { contents }),
       sessionId: body.request?.sessionId || this.generateSessionId(),
       safetySettings: undefined,
       toolConfig: body.request?.tools?.length > 0 
