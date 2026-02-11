@@ -16,10 +16,10 @@ const OAUTH_TEST_CONFIG = {
     checkExpiry: true,
   },
   codex: {
-    url: "https://api.openai.com/v1/models",
-    method: "GET",
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
+    // Codex OAuth tokens are ChatGPT session tokens, NOT standard OpenAI API keys.
+    // They don't work with api.openai.com/v1/models (returns 403 "Access denied").
+    // Use checkExpiry mode instead — actual connectivity is validated via Usage/Limits.
+    checkExpiry: true,
     refreshable: true,
   },
   "gemini-cli": {
