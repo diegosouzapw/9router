@@ -10,6 +10,11 @@ import fs from "node:fs";
 const isCloud =
   typeof globalThis.caches === "object" && globalThis.caches !== null;
 
+// Detect Next.js build phase — NEVER write to the real DB during build.
+// This prevents `npx next build` from evaluating server modules and
+// overwriting the production database with empty defaults.
+const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+
 // Get app name - fixed constant to avoid Windows path issues in standalone build
 function getAppName() {
   return "9router";
@@ -59,20 +64,34 @@ const defaultData = {
 };
 
 function cloneDefaultData() {
-  return {
-    providerConnections: [],
-    providerNodes: [],
-    modelAliases: {},
-    mitmAlias: {},
-    combos: [],
-    apiKeys: [],
-    settings: {
-      cloudEnabled: false,
-      stickyRoundRobinLimit: 3,
-      requireLogin: true,
-    },
-    pricing: {},
-  };
+  return JSON.parse(JSON.stringify(defaultData));
+}
+
+/**
+ * Create a timestamped backup of the DB file before destructive operations.
+ * Only backs up files with meaningful content (>300 bytes).
+ */
+function backupDbFile(reason = "auto") {
+  try {
+    if (!DB_FILE || !fs.existsSync(DB_FILE)) return;
+    const stat = fs.statSync(DB_FILE);
+    // Only backup if file has meaningful content (not just defaults)
+    if (stat.size <= 300) return;
+    const backupDir = path.join(DATA_DIR, "db_backups");
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupFile = path.join(backupDir, `db_${timestamp}_${reason}.json`);
+    fs.copyFileSync(DB_FILE, backupFile);
+    console.log(`[DB] Backup created: ${backupFile} (${stat.size} bytes)`);
+    // Keep only last 10 backups
+    const files = fs.readdirSync(backupDir).filter(f => f.startsWith("db_")).sort();
+    while (files.length > 10) {
+      const oldest = files.shift();
+      fs.unlinkSync(path.join(backupDir, oldest));
+    }
+  } catch (err) {
+    console.error("[DB] Backup failed:", err.message);
+  }
 }
 
 function ensureDbShape(data) {
@@ -159,6 +178,17 @@ export async function getDb() {
     return dbInstance;
   }
 
+  // During build phase, return an in-memory DB to prevent overwriting real data
+  if (isBuildPhase) {
+    if (!dbInstance) {
+      const data = cloneDefaultData();
+      dbInstance = new Low({ read: async () => {}, write: async () => {} }, data);
+      dbInstance.data = data;
+      console.log('[DB] Build phase detected — using in-memory DB (read-only)');
+    }
+    return dbInstance;
+  }
+
   if (!dbInstance) {
     const adapter = new JSONFile(DB_FILE);
     dbInstance = new Low(adapter, cloneDefaultData());
@@ -169,7 +199,8 @@ export async function getDb() {
     await dbInstance.read();
   } catch (error) {
     if (error instanceof SyntaxError) {
-      console.warn('[DB] Corrupt JSON detected, resetting to defaults...');
+      console.warn('[DB] Corrupt JSON detected — creating backup before reset...');
+      backupDbFile('corrupt');
       dbInstance.data = cloneDefaultData();
       await dbInstance.write();
     } else {
@@ -179,6 +210,10 @@ export async function getDb() {
 
   // Initialize/migrate missing keys for older DB schema versions.
   if (!dbInstance.data) {
+    // File exists but read returned null — likely empty or unreadable.
+    // Backup first in case there's recoverable content.
+    console.warn('[DB] No data after read — creating backup before initializing...');
+    backupDbFile('null-data');
     dbInstance.data = cloneDefaultData();
     await dbInstance.write();
   } else {
