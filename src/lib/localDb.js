@@ -623,6 +623,8 @@ export async function createCombo(data) {
       id: uuidv4(),
       name: data.name,
       models: data.models || [],
+      strategy: data.strategy || "priority",
+      config: data.config || {},
       createdAt: now,
       updatedAt: now,
     };

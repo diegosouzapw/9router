@@ -44,16 +44,24 @@ export async function getModelInfo(modelStr) {
 }
 
 /**
- * Check if model is a combo and get models list
- * @returns {Promise<string[]|null>} Array of models or null if not a combo
+ * Check if model is a combo and return the full combo object
+ * @returns {Promise<Object|null>} Full combo object or null if not a combo
  */
-export async function getComboModels(modelStr) {
-  // Only check if it's not in provider/model format
-  if (modelStr.includes("/")) return null;
-  
+export async function getCombo(modelStr) {
+  // Check combo DB first (supports names with /)
   const combo = await getComboByName(modelStr);
   if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+    return combo;
   }
   return null;
+}
+
+/**
+ * Legacy: get combo models as string array
+ * @returns {Promise<string[]|null>}
+ */
+export async function getComboModels(modelStr) {
+  const combo = await getCombo(modelStr);
+  if (!combo) return null;
+  return combo.models.map(m => typeof m === "string" ? m : m.model);
 }

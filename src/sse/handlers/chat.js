@@ -5,7 +5,8 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getCombo } from "../services/model.js";
+import { parseModel } from "open-sse/services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
@@ -77,13 +78,25 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
-  if (comboModels) {
-    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models`);
+  const combo = await getCombo(modelStr);
+  if (combo) {
+    log.info("CHAT", `Combo "${modelStr}" [${combo.strategy || "priority"}] with ${combo.models.length} models`);
+
+    // Pre-check function: skip models where all accounts are in cooldown
+    const isModelAvailable = async (modelString) => {
+      const parsed = parseModel(modelString);
+      const provider = parsed.provider;
+      if (!provider) return true; // can't determine provider, let it try
+      const creds = await getProviderCredentials(provider);
+      if (!creds || creds.allRateLimited) return false;
+      return true;
+    };
+
     return handleComboChat({
       body,
-      models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request),
+      combo,
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, combo.name),
+      isModelAvailable,
       log
     });
   }
@@ -95,7 +108,7 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, comboName = null) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) {
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -153,6 +166,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       clientRawRequest,
       connectionId: credentials.connectionId,
       userAgent,
+      comboName,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,

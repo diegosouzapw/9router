@@ -31,7 +31,7 @@ import { withRateLimit, updateFromHeaders, initializeRateLimits } from "../servi
  * @param {function} options.onDisconnect - Callback when client disconnects
  * @param {string} options.connectionId - Connection ID for usage tracking
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, comboName }) {
   const { provider, model } = modelInfo;
   const startTime = Date.now();
 
@@ -172,7 +172,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       method: "POST", path: clientRawRequest?.endpoint || "/v1/chat/completions",
       status: error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY,
       model, provider, connectionId, duration: Date.now() - startTime,
-      requestBody: body, error: error.message, sourceFormat, targetFormat,
+      requestBody: body, error: error.message, sourceFormat, targetFormat, comboName,
     }).catch(() => {});
     if (error.name === "AbortError") {
       streamController.handleError(error);
@@ -233,7 +233,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     saveCallLog({
       method: "POST", path: clientRawRequest?.endpoint || "/v1/chat/completions",
       status: statusCode, model, provider, connectionId, duration: Date.now() - startTime,
-      requestBody: body, error: message, sourceFormat, targetFormat,
+      requestBody: body, error: message, sourceFormat, targetFormat, comboName,
     }).catch(() => {});
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
@@ -295,6 +295,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       responseBody,
       sourceFormat,
       targetFormat,
+      comboName,
     }).catch(() => {});
     if (usage && typeof usage === 'object') {
       const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [USAGE] ${provider.toUpperCase()} | in=${usage?.prompt_tokens || 0} | out=${usage?.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
@@ -356,6 +357,25 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Create transform stream with logger for streaming response
   let transformStream;
+
+  // Callback to save call log when stream completes (streaming calls were never logged before!)
+  const onStreamComplete = ({ status: streamStatus, usage: streamUsage }) => {
+    saveCallLog({
+      method: "POST",
+      path: clientRawRequest?.endpoint || "/v1/chat/completions",
+      status: streamStatus || 200,
+      model,
+      provider,
+      connectionId,
+      duration: Date.now() - startTime,
+      tokens: streamUsage || {},
+      requestBody: body,
+      sourceFormat,
+      targetFormat,
+      comboName,
+    }).catch(() => {});
+  };
+
   // For Codex provider, translate response from openai-responses to openai (Chat Completions) format
   // UNLESS client is Droid CLI which expects openai-responses format back
   const isDroidCLI = userAgent?.toLowerCase().includes('droid') || userAgent?.toLowerCase().includes('codex-cli');
@@ -366,14 +386,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (needsCodexTranslation) {
     // Codex returns openai-responses, translate to openai (Chat Completions) that clients expect
     log?.debug?.("STREAM", `Codex translation mode: openai-responses → openai`);
-    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body);
+    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete);
   } else if (needsTranslation(targetFormat, sourceFormat)) {
     // Standard translation for other providers
     log?.debug?.("STREAM", `Translation mode: ${targetFormat} → ${sourceFormat}`);
-    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body);
+    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete);
   } else {
     log?.debug?.("STREAM", `Standard passthrough mode`);
-    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body);
+    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete);
   }
 
   // Pipe response through transform with disconnect detection
