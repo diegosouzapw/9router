@@ -35,7 +35,7 @@
 
 - ✅ **Maximize subscriptions** - Track quota, use every bit before reset
 - ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
-- ✅ **Multi-account** - Round-robin between accounts per provider
+- ✅ **Multi-account** - Semaphore-based concurrency control per account per provider
 - ✅ **Universal** - Works with Claude Code, Codex, Gemini CLI, Cursor, Cline, any CLI tool
 
 ---
@@ -128,7 +128,7 @@ Default URLs:
 | 🔄 **Format Translation**        | OpenAI ↔ Claude ↔ Gemini seamless          | Works with any CLI tool             |
 | 👥 **Multi-Account Support**     | Multiple accounts per provider             | Load balancing + redundancy         |
 | 🔄 **Auto Token Refresh**        | OAuth tokens refresh automatically         | No manual re-login needed           |
-| 🎨 **Custom Combos**             | Create unlimited model combinations        | Tailor fallback to your needs       |
+| 🎨 **Custom Combos**             | Priority, Weighted, or Round-Robin routing | Tailor fallback to your needs       |
 | 🧩 **Custom Models**             | Add any model ID to any provider           | No app update needed for new models |
 | 🛣️ **Dedicated Provider Routes** | Per-provider API endpoints                 | Direct routing, model validation    |
 | 🌐 **Network Proxy**             | Global + per-provider outbound proxy       | Works behind firewalls/VPNs         |
@@ -147,12 +147,23 @@ Create combos with automatic fallback:
 
 ```
 Combo: "my-coding-stack"
+  Strategy: priority (sequential fallback)
   1. cc/claude-opus-4-6        (your subscription)
   2. glm/glm-4.7               (cheap backup, $0.6/1M)
   3. if/kimi-k2-thinking       (free fallback)
 
 → Auto switches when quota runs out or errors occur
 ```
+
+**Three routing strategies:**
+
+| Strategy        | How It Selects                              | Best For                         |
+| --------------- | ------------------------------------------- | -------------------------------- |
+| **Priority**    | Sequential: model 1 → 2 → 3                 | "Use my subscription first"      |
+| **Weighted**    | Probabilistic: 60% model A, 30% B, 10% C    | "Split traffic across providers" |
+| **Round-Robin** | Circular: request #1→A, #2→B, #3→C, #4→A... | "Distribute evenly"              |
+
+Round-robin combos include a **semaphore-based rate-limit queue** — when a model hits 429, requests wait in a FIFO queue instead of failing immediately.
 
 ### 📊 Real-Time Quota Tracking
 
@@ -171,9 +182,12 @@ Seamless translation between formats:
 
 ### 👥 Multi-Account Support
 
-- Add multiple accounts per provider
-- Auto round-robin or priority-based routing
-- Fallback to next account when one hits quota
+- Add multiple accounts per provider (e.g., 3 Gemini CLI tokens)
+- **Semaphore-based concurrency control** — limits simultaneous requests per account
+- **FIFO queue** — excess requests wait instead of failing when accounts are busy
+- **Rate-limit detection** — 429 errors automatically pause the account with cooldown
+- Configurable: Concurrency per Account + Queue Timeout
+- Alternative: Fill-First mode (use highest-priority account until exhausted)
 
 ### 🔄 Auto Token Refresh
 
@@ -183,9 +197,10 @@ Seamless translation between formats:
 
 ### 🎨 Custom Combos
 
-- Create unlimited model combinations
-- Mix subscription, cheap, and free tiers
-- Name your combos for easy access
+- Create unlimited model combinations with 3 routing strategies
+- Priority (sequential), Weighted (probabilistic), Round-Robin (circular)
+- Nested combos: a combo can reference another combo as a model
+- Advanced config cascade: global defaults → provider overrides → combo-specific
 - Share combos across devices with Cloud Sync
 
 ### 📝 Request Logging

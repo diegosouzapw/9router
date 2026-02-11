@@ -87,21 +87,25 @@ export async function POST(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for embedding provider: ${provider}`);
   }
 
-  const result = await handleEmbedding({ body, credentials, log });
+  try {
+    const result = await handleEmbedding({ body, credentials, log });
 
-  if (result.success) {
-    return new Response(JSON.stringify(result.data), {
-      status: 200,
+    if (result.success) {
+      return new Response(JSON.stringify(result.data), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const errorPayload = toJsonErrorPayload(
+      result.error,
+      "Embedding provider error"
+    );
+    return new Response(JSON.stringify(errorPayload), {
+      status: result.status,
       headers: { "Content-Type": "application/json" }
     });
+  } finally {
+    if (credentials.release) credentials.release();
   }
-
-  const errorPayload = toJsonErrorPayload(
-    result.error,
-    "Embedding provider error"
-  );
-  return new Response(JSON.stringify(errorPayload), {
-    status: result.status,
-    headers: { "Content-Type": "application/json" }
-  });
 }

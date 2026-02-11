@@ -89,7 +89,12 @@ export async function handleChat(request, clientRawRequest = null) {
       const provider = parsed.provider;
       if (!provider) return true; // can't determine provider, let it try
       const creds = await getProviderCredentials(provider);
-      if (!creds || creds.allRateLimited) return false;
+      if (!creds || creds.allRateLimited) {
+        if (creds?.release) creds.release();
+        return false;
+      }
+      // Release the semaphore slot — this is just a pre-check, not a real request
+      if (creds.release) creds.release();
       return true;
     };
 
@@ -146,6 +151,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.release) credentials.release();
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
@@ -189,7 +195,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
     
-    if (result.success) return result.response;
+    if (result.success) {
+      if (credentials.release) credentials.release();
+      return result.response;
+    }
+
+    // Release semaphore slot for failed account before trying next
+    if (credentials.release) credentials.release();
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider);

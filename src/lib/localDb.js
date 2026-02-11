@@ -57,7 +57,8 @@ const defaultData = {
   apiKeys: [],
   settings: {
     cloudEnabled: false,
-    stickyRoundRobinLimit: 3,
+    concurrencyPerAccount: 3,
+    queueTimeoutMs: 30000,
     requireLogin: true
   },
   pricing: {} // NEW: pricing configuration

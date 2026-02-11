@@ -68,17 +68,21 @@ export async function POST(request, { params }) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${rawProvider}`);
   }
 
-  const result = await handleEmbedding({ body, credentials, log });
+  try {
+    const result = await handleEmbedding({ body, credentials, log });
 
-  if (result.success) {
-    return new Response(JSON.stringify(result.data), {
-      status: 200,
+    if (result.success) {
+      return new Response(JSON.stringify(result.data), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: result.error }), {
+      status: result.status || 500,
       headers: { "Content-Type": "application/json" },
     });
+  } finally {
+    if (credentials.release) credentials.release();
   }
-
-  return new Response(JSON.stringify({ error: result.error }), {
-    status: result.status || 500,
-    headers: { "Content-Type": "application/json" },
-  });
 }
