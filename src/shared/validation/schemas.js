@@ -20,13 +20,32 @@ export const createKeySchema = z.object({
 
 // ──── Combo Schemas ────
 
+// A model entry can be a plain string (legacy) or an object with weight
+const comboModelEntry = z.union([
+  z.string(),
+  z.object({
+    model: z.string().min(1),
+    weight: z.number().min(0).max(100).default(0),
+  }),
+]);
+
+// Per-combo config overrides
+const comboConfigSchema = z.object({
+  maxRetries: z.number().int().min(0).max(10).optional(),
+  retryDelayMs: z.number().int().min(0).max(60000).optional(),
+  timeoutMs: z.number().int().min(1000).max(600000).optional(),
+  healthCheckEnabled: z.boolean().optional(),
+}).optional();
+
 export const createComboSchema = z.object({
   name: z
     .string()
     .min(1, "Name is required")
     .max(100)
-    .regex(/^[a-zA-Z0-9_-]+$/, "Name can only contain letters, numbers, - and _"),
-  models: z.array(z.string()).optional().default([]),
+    .regex(/^[a-zA-Z0-9_/.-]+$/, "Name can only contain letters, numbers, -, _, / and ."),
+  models: z.array(comboModelEntry).optional().default([]),
+  strategy: z.enum(["priority", "weighted"]).optional().default("priority"),
+  config: comboConfigSchema,
 });
 
 // ──── Settings Schemas ────

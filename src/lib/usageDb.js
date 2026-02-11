@@ -237,8 +237,8 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
       }
     } catch {}
 
-    const sent = tokens?.prompt_tokens !== undefined ? tokens.prompt_tokens : "-";
-    const received = tokens?.completion_tokens !== undefined ? tokens.completion_tokens : "-";
+    const sent = tokens?.input !== undefined ? tokens.input : (tokens?.prompt_tokens !== undefined ? tokens.prompt_tokens : "-");
+    const received = tokens?.output !== undefined ? tokens.output : (tokens?.completion_tokens !== undefined ? tokens.completion_tokens : "-");
 
     const line = `${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status}\n`;
 
@@ -306,9 +306,9 @@ export async function calculateCost(provider, model, tokens) {
 
     let cost = 0;
 
-    // Input tokens (non-cached)
-    const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
-    const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
+    // Input tokens (non-cached) — support both stored format (input/output) and OpenAI format
+    const inputTokens = tokens.input ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+    const cachedTokens = tokens.cacheRead ?? tokens.cached_tokens ?? tokens.cache_read_input_tokens ?? 0;
     const nonCachedInput = Math.max(0, inputTokens - cachedTokens);
 
     cost += (nonCachedInput * (pricing.input / 1000000));
@@ -320,18 +320,18 @@ export async function calculateCost(provider, model, tokens) {
     }
 
     // Output tokens
-    const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
+    const outputTokens = tokens.output ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0;
     cost += (outputTokens * (pricing.output / 1000000));
 
     // Reasoning tokens
-    const reasoningTokens = tokens.reasoning_tokens || 0;
+    const reasoningTokens = tokens.reasoning ?? tokens.reasoning_tokens ?? 0;
     if (reasoningTokens > 0) {
       const reasoningRate = pricing.reasoning || pricing.output; // Fallback to output rate
       cost += (reasoningTokens * (reasoningRate / 1000000));
     }
 
     // Cache creation tokens
-    const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
+    const cacheCreationTokens = tokens.cacheCreation ?? tokens.cache_creation_input_tokens ?? 0;
     if (cacheCreationTokens > 0) {
       const cacheCreationRate = pricing.cache_creation || pricing.input; // Fallback to input rate
       cost += (cacheCreationTokens * (cacheCreationRate / 1000000));
@@ -423,8 +423,8 @@ export async function getUsageStats() {
   }
 
   for (const entry of history) {
-    const promptTokens = entry.tokens?.prompt_tokens || 0;
-    const completionTokens = entry.tokens?.completion_tokens || 0;
+    const promptTokens = entry.tokens?.input ?? entry.tokens?.prompt_tokens ?? 0;
+    const completionTokens = entry.tokens?.output ?? entry.tokens?.completion_tokens ?? 0;
     const entryTime = new Date(entry.timestamp);
 
     // Calculate cost for this entry
@@ -626,6 +626,7 @@ export async function saveCallLog(entry) {
       requestBody: truncatePayload(entry.requestBody),
       responseBody: truncatePayload(entry.responseBody),
       error: entry.error || null,
+      comboName: entry.comboName || null,
     };
     
     // 1. Add to in-memory buffer
@@ -727,13 +728,15 @@ if (!isCloud) {
  * @param {string} filter.model - Model name substring
  * @param {string} filter.provider - Provider ID
  * @param {string} filter.account - Account name substring
- * @param {string} filter.search - Free text search across model, path, account
+ * @param {string} filter.search - Free text search across model, path, account, provider, comboName
  * @param {number} filter.limit - Max entries (default 200)
  */
 export async function getCallLogs(filter = {}) {
-  // Ensure buffer is seeded from DB if empty
-  if (callLogsBuffer.length === 0) {
-    await getCallLogsDb();
+  // Always re-read from DB to pick up entries written by the SSE handler
+  const db = await getCallLogsDb();
+  if (db) {
+    await db.read();
+    callLogsBuffer = (db.data?.logs || []).slice(-CALL_LOGS_MAX);
   }
   
   let logs = [...callLogsBuffer];
@@ -774,6 +777,7 @@ export async function getCallLogs(filter = {}) {
       l.path?.toLowerCase().includes(q) ||
       l.account?.toLowerCase().includes(q) ||
       l.provider?.toLowerCase().includes(q) ||
+      l.comboName?.toLowerCase().includes(q) ||
       String(l.status).includes(q)
     );
   }
@@ -795,6 +799,7 @@ export async function getCallLogs(filter = {}) {
     sourceFormat: l.sourceFormat,
     targetFormat: l.targetFormat,
     error: l.error,
+    comboName: l.comboName || null,
     hasRequestBody: !!l.requestBody,
     hasResponseBody: !!l.responseBody,
   }));
@@ -804,9 +809,11 @@ export async function getCallLogs(filter = {}) {
  * Get a single call log by ID (with full payloads from disk when available)
  */
 export async function getCallLogById(id) {
-  // Ensure buffer is seeded
-  if (callLogsBuffer.length === 0) {
-    await getCallLogsDb();
+  // Always re-read from DB to pick up entries written by the SSE handler
+  const db = await getCallLogsDb();
+  if (db) {
+    await db.read();
+    callLogsBuffer = (db.data?.logs || []).slice(-CALL_LOGS_MAX);
   }
   
   const entry = callLogsBuffer.find(l => l.id === id);

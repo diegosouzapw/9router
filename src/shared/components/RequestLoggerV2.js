@@ -12,6 +12,21 @@ const PROTOCOL_COLORS = {
   bypass: { bg: "#6B7280", text: "#fff", label: "Bypass" },
 };
 
+// Provider badge colors
+const PROVIDER_COLORS = {
+  github: { bg: "#6e40c9", text: "#fff", label: "GitHub" },
+  kiro: { bg: "#FF9900", text: "#000", label: "Kiro" },
+  antigravity: { bg: "#4285F4", text: "#fff", label: "AG" },
+  claude: { bg: "#D97757", text: "#fff", label: "Claude" },
+  codex: { bg: "#10A37F", text: "#fff", label: "Codex" },
+  gemini: { bg: "#34A853", text: "#fff", label: "Gemini" },
+  qwen: { bg: "#6366F1", text: "#fff", label: "Qwen" },
+  iflow: { bg: "#EC4899", text: "#fff", label: "iFlow" },
+  fireworks: { bg: "#F97316", text: "#fff", label: "Fireworks" },
+  kimi: { bg: "#06B6D4", text: "#fff", label: "Kimi" },
+  "gemini-cli": { bg: "#34A853", text: "#fff", label: "Gemini CLI" },
+};
+
 // Status badge styling
 function getStatusStyle(status) {
   if (status >= 200 && status < 300) return { bg: "#059669", text: "#fff" };
@@ -21,16 +36,12 @@ function getStatusStyle(status) {
   return { bg: "#6B7280", text: "#fff" };
 }
 
-// Quick filter definitions
-const QUICK_FILTERS = [
-  { key: "all", label: "All", icon: null },
-  { key: "error", label: "Error", icon: "error" },
-  { key: "gemini", label: "Gemini", provider: "gemini" },
-  { key: "claude", label: "Claude", provider: "claude" },
-  { key: "openai", label: "OpenAI", provider: "openai" },
-  { key: "kimi", label: "Kimi", provider: "kimi" },
-  { key: "fireworks", label: "Fireworks", provider: "fireworks" },
-  { key: "codex", label: "Codex", provider: "codex" },
+// Quick filter categories - status-based only (providers are dynamic from data)
+const STATUS_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "error", label: "Errors", icon: "error" },
+  { key: "ok", label: "Success", icon: "check_circle" },
+  { key: "combo", label: "Combo", icon: "hub" },
 ];
 
 function formatTime(isoString) {
@@ -68,6 +79,7 @@ export default function RequestLoggerV2() {
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
   const [selectedAccount, setSelectedAccount] = useState("");
+  const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedLog, setSelectedLog] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState(null);
@@ -79,8 +91,8 @@ export default function RequestLoggerV2() {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (activeFilter === "error") params.set("status", "error");
-      const filterDef = QUICK_FILTERS.find(f => f.key === activeFilter);
-      if (filterDef?.provider) params.set("provider", filterDef.provider);
+      if (activeFilter === "ok") params.set("status", "ok");
+      if (selectedProvider) params.set("provider", selectedProvider);
       if (selectedAccount) params.set("account", selectedAccount);
       params.set("limit", "300");
 
@@ -94,7 +106,7 @@ export default function RequestLoggerV2() {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [search, activeFilter, selectedAccount]);
+  }, [search, activeFilter, selectedAccount, selectedProvider]);
 
   // Initial load
   useEffect(() => {
@@ -104,7 +116,7 @@ export default function RequestLoggerV2() {
   // Refetch when filters change
   useEffect(() => {
     fetchLogs(false);
-  }, [search, activeFilter, selectedAccount]);
+  }, [search, activeFilter, selectedAccount, selectedProvider]);
 
   // Auto-refresh
   useEffect(() => {
@@ -114,6 +126,9 @@ export default function RequestLoggerV2() {
     }
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [recording, fetchLogs]);
+  
+  // Client-side combo filter
+  const filteredLogs = activeFilter === "combo" ? logs.filter(l => l.comboName) : logs;
 
   // Fetch log detail
   const openDetail = async (logEntry) => {
@@ -161,13 +176,16 @@ export default function RequestLoggerV2() {
     }
   };
 
-  // Unique accounts for dropdown
+  // Unique accounts and providers for dropdowns
   const uniqueAccounts = [...new Set(logs.map(l => l.account).filter(a => a && a !== "-"))];
+  const uniqueProviders = [...new Set(logs.map(l => l.provider).filter(p => p && p !== "-"))].sort();
+  const uniqueCombos = [...new Set(logs.map(l => l.comboName).filter(Boolean))].sort();
 
   // Stats
-  const totalCount = logs.length;
-  const okCount = logs.filter(l => l.status >= 200 && l.status < 300).length;
-  const errorCount = logs.filter(l => l.status >= 400).length;
+  const totalCount = filteredLogs.length;
+  const okCount = filteredLogs.filter(l => l.status >= 200 && l.status < 300).length;
+  const errorCount = filteredLogs.filter(l => l.status >= 400).length;
+  const comboCount = logs.filter(l => l.comboName).length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -191,18 +209,31 @@ export default function RequestLoggerV2() {
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[18px]">search</span>
           <input
             type="text"
-            placeholder="Filter by model, path, or status..."
+            placeholder="Search model, provider, account, combo..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary"
           />
         </div>
 
+        {/* Provider Dropdown */}
+        <select
+          value={selectedProvider}
+          onChange={(e) => setSelectedProvider(e.target.value)}
+          className="px-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary focus:outline-none focus:border-primary appearance-none cursor-pointer min-w-[140px]"
+        >
+          <option value="">All Providers</option>
+          {uniqueProviders.map(p => {
+            const pc = PROVIDER_COLORS[p];
+            return <option key={p} value={p}>{pc?.label || p.toUpperCase()}</option>;
+          })}
+        </select>
+
         {/* Account Dropdown */}
         <select
           value={selectedAccount}
           onChange={(e) => setSelectedAccount(e.target.value)}
-          className="px-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary focus:outline-none focus:border-primary appearance-none cursor-pointer min-w-[160px]"
+          className="px-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary focus:outline-none focus:border-primary appearance-none cursor-pointer min-w-[140px]"
         >
           <option value="">All Accounts</option>
           {uniqueAccounts.map(a => (
@@ -223,9 +254,14 @@ export default function RequestLoggerV2() {
               {errorCount} ERR
             </span>
           )}
+          {comboCount > 0 && (
+            <span className="px-2 py-1 rounded bg-violet-500/10 text-violet-300 font-mono">
+              {comboCount} combo
+            </span>
+          )}
         </div>
 
-        {/* Refresh & Clear */}
+        {/* Refresh */}
         <button
           onClick={() => fetchLogs(false)}
           className="p-2 rounded-lg hover:bg-bg-subtle text-text-muted hover:text-text-primary transition-colors"
@@ -237,20 +273,47 @@ export default function RequestLoggerV2() {
 
       {/* Quick Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-text-muted uppercase tracking-wider mr-1">Quick Filters:</span>
-        {QUICK_FILTERS.map(f => (
+        {/* Status Filters */}
+        {STATUS_FILTERS.map(f => (
           <button
             key={f.key}
             onClick={() => setActiveFilter(activeFilter === f.key ? "all" : f.key)}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
               activeFilter === f.key
-                ? "bg-primary text-white border-primary"
+                ? f.key === "error" ? "bg-red-500/20 text-red-400 border-red-500/40"
+                : f.key === "ok" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
+                : f.key === "combo" ? "bg-violet-500/20 text-violet-300 border-violet-500/40"
+                : "bg-primary text-white border-primary"
                 : "bg-bg-subtle border-border text-text-muted hover:border-text-muted"
             }`}
           >
+            {f.icon && <span className="material-symbols-outlined text-[14px]">{f.icon}</span>}
             {f.label}
           </button>
         ))}
+
+        {/* Divider */}
+        {uniqueProviders.length > 0 && (
+          <span className="w-px h-5 bg-border mx-1" />
+        )}
+
+        {/* Dynamic Provider Quick Filters (from data) */}
+        {uniqueProviders.map(p => {
+          const pc = PROVIDER_COLORS[p] || { bg: "#374151", text: "#fff", label: p.toUpperCase() };
+          const isActive = selectedProvider === p;
+          return (
+            <button
+              key={p}
+              onClick={() => setSelectedProvider(isActive ? "" : p)}
+              className={`px-3 py-1 rounded-full text-xs font-bold uppercase border transition-all ${
+                isActive ? "border-white/40 ring-1 ring-white/20" : "border-transparent opacity-70 hover:opacity-100"
+              }`}
+              style={{ backgroundColor: isActive ? pc.bg : `${pc.bg}33`, color: isActive ? pc.text : pc.bg }}
+            >
+              {pc.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Table */}
@@ -268,21 +331,22 @@ export default function RequestLoggerV2() {
               <thead className="sticky top-0 z-10" style={{ backgroundColor: "var(--bg-primary, #0f1117)" }}>
                 <tr className="border-b border-border" style={{ backgroundColor: "var(--bg-primary, #0f1117)" }}>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Status</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Method</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Model</th>
+                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Provider</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Protocol</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Account</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Path</th>
+                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Combo</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Tokens</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Duration</th>
                   <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Time</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/30">
-                {logs.map((log) => {
+                {filteredLogs.map((log) => {
                   const statusStyle = getStatusStyle(log.status);
                   const protocolKey = log.sourceFormat || log.provider;
                   const protocol = PROTOCOL_COLORS[protocolKey] || PROTOCOL_COLORS[log.provider] || { bg: "#6B7280", text: "#fff", label: (protocolKey || log.provider || "-").toUpperCase() };
+                  const providerColor = PROVIDER_COLORS[log.provider] || { bg: "#374151", text: "#fff", label: (log.provider || "-").toUpperCase() };
                   const isError = log.status >= 400;
 
                   return (
@@ -299,8 +363,15 @@ export default function RequestLoggerV2() {
                           {log.status || "..."}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-text-muted font-mono">{log.method}</td>
-                      <td className="px-3 py-2 font-medium text-primary font-mono">{log.model}</td>
+                      <td className="px-3 py-2 font-medium text-primary font-mono text-[11px]">{log.model}</td>
+                      <td className="px-3 py-2">
+                        <span
+                          className="inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase"
+                          style={{ backgroundColor: providerColor.bg, color: providerColor.text }}
+                        >
+                          {providerColor.label}
+                        </span>
+                      </td>
                       <td className="px-3 py-2">
                         <span
                           className="inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase"
@@ -312,8 +383,14 @@ export default function RequestLoggerV2() {
                       <td className="px-3 py-2 text-text-muted truncate max-w-[120px]" title={log.account}>
                         {maskAccount(log.account)}
                       </td>
-                      <td className="px-3 py-2 text-text-muted font-mono truncate max-w-[200px]" title={log.path}>
-                        {log.path}
+                      <td className="px-3 py-2">
+                        {log.comboName ? (
+                          <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                            {log.comboName}
+                          </span>
+                        ) : (
+                          <span className="text-text-muted text-[10px]">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">
                         <span className="text-text-muted">I:</span>{" "}
@@ -366,6 +443,7 @@ function DetailModal({ log, detail, loading, onClose, onCopy }) {
   const statusStyle = getStatusStyle(log.status);
   const protocolKey = log.sourceFormat || log.provider;
   const protocol = PROTOCOL_COLORS[protocolKey] || PROTOCOL_COLORS[log.provider] || { bg: "#6B7280", text: "#fff", label: (protocolKey || log.provider || "-").toUpperCase() };
+  const providerColor = PROVIDER_COLORS[log.provider] || { bg: "#374151", text: "#fff", label: (log.provider || "-").toUpperCase() };
 
   const formatDate = (iso) => {
     try {
@@ -408,7 +486,7 @@ function DetailModal({ log, detail, loading, onClose, onCopy }) {
 
         <div className="p-6 flex flex-col gap-6">
           {/* Metadata Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-4 bg-bg-subtle rounded-xl border border-border">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-bg-subtle rounded-xl border border-border">
             <div>
               <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Time</div>
               <div className="text-sm font-medium">{formatDate(log.timestamp)}</div>
@@ -429,6 +507,19 @@ function DetailModal({ log, detail, loading, onClose, onCopy }) {
               </div>
             </div>
             <div>
+              <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Model</div>
+              <div className="text-sm font-medium text-primary font-mono">{log.model}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Provider</div>
+              <span
+                className="inline-block px-2.5 py-1 rounded text-[10px] font-bold uppercase"
+                style={{ backgroundColor: providerColor.bg, color: providerColor.text }}
+              >
+                {providerColor.label}
+              </span>
+            </div>
+            <div>
               <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Protocol</div>
               <span
                 className="inline-block px-2.5 py-1 rounded text-[10px] font-bold uppercase"
@@ -438,12 +529,18 @@ function DetailModal({ log, detail, loading, onClose, onCopy }) {
               </span>
             </div>
             <div>
-              <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Model</div>
-              <div className="text-sm font-medium text-primary font-mono">{log.model}</div>
-            </div>
-            <div>
               <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Account</div>
               <div className="text-sm font-medium">{detail?.account || log.account || "-"}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Combo</div>
+              {(detail?.comboName || log.comboName) ? (
+                <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                  {detail?.comboName || log.comboName}
+                </span>
+              ) : (
+                <div className="text-sm text-text-muted">—</div>
+              )}
             </div>
           </div>
 

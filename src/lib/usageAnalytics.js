@@ -111,15 +111,15 @@ export async function computeAnalytics(history, range = "30d", connectionMap = {
     const entryDate = new Date(entry.timestamp);
     if (entryDate >= heatmapStart) {
       const key = toDateKey(entryDate);
-      const tokens = (entry.tokens?.prompt_tokens || 0) + (entry.tokens?.completion_tokens || 0);
+      const tokens = (entry.tokens?.input ?? entry.tokens?.prompt_tokens ?? 0) + (entry.tokens?.output ?? entry.tokens?.completion_tokens ?? 0);
       activityMap[key] = (activityMap[key] || 0) + tokens;
     }
   }
 
   // ---- Single pass over filtered entries for everything else ----
   for (const entry of entries) {
-    const pt = entry.tokens?.prompt_tokens || 0;
-    const ct = entry.tokens?.completion_tokens || 0;
+    const pt = entry.tokens?.input ?? entry.tokens?.prompt_tokens ?? 0;
+    const ct = entry.tokens?.output ?? entry.tokens?.completion_tokens ?? 0;
     const totalTkns = pt + ct;
     const entryDate = new Date(entry.timestamp);
     const dateKey = toDateKey(entryDate);
