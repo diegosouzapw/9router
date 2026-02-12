@@ -36,6 +36,15 @@ export default function ProfilePage() {
   const [restoreStatus, setRestoreStatus] = useState({ type: "", message: "" });
   const [restoringId, setRestoringId] = useState(null);
   const [confirmRestoreId, setConfirmRestoreId] = useState(null);
+  const [manualBackupLoading, setManualBackupLoading] = useState(false);
+  const [manualBackupStatus, setManualBackupStatus] = useState({ type: "", message: "" });
+  const [storageHealth, setStorageHealth] = useState({
+    driver: "sqlite",
+    dbPath: "~/.9router/storage.sqlite",
+    sizeBytes: 0,
+    retentionDays: 90,
+    lastBackupAt: null,
+  });
 
   // Global Proxy state
   const [proxyModalOpen, setProxyModalOpen] = useState(false);
@@ -64,6 +73,41 @@ export default function ProfilePage() {
     }
   };
 
+  const loadStorageHealth = async () => {
+    try {
+      const res = await fetch("/api/storage/health");
+      if (!res.ok) return;
+      const data = await res.json();
+      setStorageHealth((prev) => ({ ...prev, ...data }));
+    } catch (err) {
+      console.error("Failed to fetch storage health:", err);
+    }
+  };
+
+  const handleManualBackup = async () => {
+    setManualBackupLoading(true);
+    setManualBackupStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/db-backups", { method: "PUT" });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.filename) {
+          setManualBackupStatus({ type: "success", message: `Backup created: ${data.filename}` });
+        } else {
+          setManualBackupStatus({ type: "info", message: data.message || "No changes since last backup" });
+        }
+        await loadStorageHealth();
+        if (backupsExpanded) await loadBackups();
+      } else {
+        setManualBackupStatus({ type: "error", message: data.error || "Backup failed" });
+      }
+    } catch (err) {
+      setManualBackupStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setManualBackupLoading(false);
+    }
+  };
+
   const handleRestore = async (backupId) => {
     setRestoringId(backupId);
     setRestoreStatus({ type: "", message: "" });
@@ -81,6 +125,7 @@ export default function ProfilePage() {
         });
         // Refresh backups list
         await loadBackups();
+        await loadStorageHealth();
       } else {
         setRestoreStatus({ type: "error", message: data.error || "Restore failed" });
       }
@@ -106,6 +151,7 @@ export default function ProfilePage() {
 
     // Load global proxy config for status display
     loadGlobalProxy();
+    loadStorageHealth();
 
     // Fetch combo defaults
     fetch("/api/settings/combo-defaults")
@@ -231,28 +277,224 @@ export default function ProfilePage() {
     });
   };
 
+  const formatBytes = (bytes) => {
+    if (!bytes || bytes === 0) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const formatRelativeTime = (isoString) => {
+    if (!isoString) return null;
+    const now = new Date();
+    const then = new Date(isoString);
+    const diffMs = now - then;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return "just now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDays = Math.floor(diffHr / 24);
+    return `${diffDays}d ago`;
+  };
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="flex flex-col gap-6">
-        {/* Local Mode Info */}
+
+        {/* ═══════ 1. System & Storage ═══════ */}
         <Card>
-          <div className="flex items-center gap-4 mb-4">
-            <div className="size-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center">
-              <span className="material-symbols-outlined text-2xl">computer</span>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-green-500/10 text-green-500">
+              <span className="material-symbols-outlined text-[20px]">database</span>
             </div>
-            <div>
-              <h2 className="text-xl font-semibold">Local Mode</h2>
-              <p className="text-text-muted">Running on your machine</p>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold">System & Storage</h3>
+              <p className="text-xs text-text-muted">All data stored locally on your machine</p>
+            </div>
+            <Badge variant={storageHealth.driver === "sqlite" ? "success" : "default"} size="sm">
+              {storageHealth.driver || "json"}
+            </Badge>
+          </div>
+
+          {/* Storage info grid */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="p-3 rounded-lg bg-bg border border-border">
+              <p className="text-[11px] text-text-muted uppercase tracking-wide mb-1">Database Path</p>
+              <p className="text-sm font-mono text-text-main break-all">{storageHealth.dbPath || "~/.9router/storage.sqlite"}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-bg border border-border">
+              <p className="text-[11px] text-text-muted uppercase tracking-wide mb-1">Database Size</p>
+              <p className="text-sm font-mono text-text-main">{formatBytes(storageHealth.sizeBytes)}</p>
             </div>
           </div>
-          <div className="pt-4 border-t border-border">
-            <p className="text-sm text-text-muted">
-              All data is stored locally in the <code className="bg-sidebar px-1 rounded">~/.9router/db.json</code> file.
+
+          {/* Last backup + Backup Now row */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-bg border border-border mb-4">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px] text-amber-500">schedule</span>
+              <div>
+                <p className="text-sm font-medium">Last Backup</p>
+                <p className="text-xs text-text-muted">
+                  {storageHealth.lastBackupAt
+                    ? `${new Date(storageHealth.lastBackupAt).toLocaleString("pt-BR")} (${formatRelativeTime(storageHealth.lastBackupAt)})`
+                    : "No backup yet"}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleManualBackup}
+              loading={manualBackupLoading}
+            >
+              <span className="material-symbols-outlined text-[14px] mr-1">backup</span>
+              Backup Now
+            </Button>
+          </div>
+
+          {manualBackupStatus.message && (
+            <div className={`p-3 rounded-lg mb-4 text-sm ${
+              manualBackupStatus.type === "success"
+                ? "bg-green-500/10 text-green-500 border border-green-500/20"
+                : manualBackupStatus.type === "info"
+                ? "bg-blue-500/10 text-blue-500 border border-blue-500/20"
+                : "bg-red-500/10 text-red-500 border border-red-500/20"
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[16px]">
+                  {manualBackupStatus.type === "success" ? "check_circle" : manualBackupStatus.type === "info" ? "info" : "error"}
+                </span>
+                {manualBackupStatus.message}
+              </div>
+            </div>
+          )}
+
+          {/* Backup/Restore expandable section */}
+          <div className="pt-3 border-t border-border/50">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-amber-500">restore</span>
+                <p className="font-medium">Backup & Restore</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setBackupsExpanded(!backupsExpanded);
+                  if (!backupsExpanded && backups.length === 0) loadBackups();
+                }}
+              >
+                {backupsExpanded ? "Hide" : "View Backups"}
+              </Button>
+            </div>
+            <p className="text-xs text-text-muted mb-3">
+              SQLite snapshots are created automatically before restore and every 15 minutes when data changes.
+              Retention: 24 hourly + 30 daily backups with smart rotation.
             </p>
+
+            {restoreStatus.message && (
+              <div className={`p-3 rounded-lg mb-3 text-sm ${
+                restoreStatus.type === "success"
+                  ? "bg-green-500/10 text-green-500 border border-green-500/20"
+                  : "bg-red-500/10 text-red-500 border border-red-500/20"
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[16px]">
+                    {restoreStatus.type === "success" ? "check_circle" : "error"}
+                  </span>
+                  {restoreStatus.message}
+                </div>
+              </div>
+            )}
+
+            {backupsExpanded && (
+              <div className="flex flex-col gap-2">
+                {backupsLoading ? (
+                  <div className="flex items-center justify-center py-6 text-text-muted">
+                    <span className="material-symbols-outlined animate-spin text-[20px] mr-2">progress_activity</span>
+                    Loading backups...
+                  </div>
+                ) : backups.length === 0 ? (
+                  <div className="text-center py-6 text-text-muted text-sm">
+                    <span className="material-symbols-outlined text-[32px] mb-2 block opacity-40">folder_off</span>
+                    No backups available yet. Backups will be created automatically when data changes.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-text-muted">{backups.length} backup(s) available</span>
+                      <button
+                        onClick={loadBackups}
+                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">refresh</span>
+                        Refresh
+                      </button>
+                    </div>
+                    {backups.map((backup) => (
+                      <div
+                        key={backup.id}
+                        className="flex items-center justify-between p-3 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-border/50 hover:border-border transition-colors"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="material-symbols-outlined text-[16px] text-amber-500">description</span>
+                            <span className="text-sm font-medium truncate">
+                              {new Date(backup.createdAt).toLocaleString("pt-BR")}
+                            </span>
+                            <Badge variant={backup.reason === "pre-restore" ? "warning" : backup.reason === "manual" ? "success" : "default"} size="sm">
+                              {backup.reason}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-text-muted ml-6">
+                            <span>{backup.connectionCount} connection(s)</span>
+                            <span>•</span>
+                            <span>{formatBytes(backup.size)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 ml-3">
+                          {confirmRestoreId === backup.id ? (
+                            <>
+                              <span className="text-xs text-amber-500 font-medium">Confirm?</span>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleRestore(backup.id)}
+                                loading={restoringId === backup.id}
+                                className="!bg-amber-500 hover:!bg-amber-600"
+                              >
+                                Yes
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setConfirmRestoreId(null)}
+                              >
+                                No
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setConfirmRestoreId(backup.id)}
+                            >
+                              <span className="material-symbols-outlined text-[14px] mr-1">restore</span>
+                              Restore
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </Card>
 
-        {/* Security */}
+        {/* ═══════ 2. Security ═══════ */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-primary/10 text-primary">
@@ -327,7 +569,7 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* Routing Preferences */}
+        {/* ═══════ 3. Routing Strategy ═══════ */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
@@ -379,7 +621,7 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* Combo Defaults */}
+        {/* ═══════ 4. Combo Defaults ═══════ */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500">
@@ -565,7 +807,47 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* Theme Preferences */}
+        {/* ═══════ 5. Global Proxy ═══════ */}
+        <Card className="p-0 overflow-hidden">
+          <div className="p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="material-symbols-outlined text-xl text-primary">vpn_lock</span>
+              <h2 className="text-lg font-bold">Global Proxy</h2>
+            </div>
+            <p className="text-sm text-text-muted mb-4">
+              Configure a global outbound proxy for all API calls. Individual providers, combos, and keys can override this.
+            </p>
+            <div className="flex items-center gap-3">
+              {globalProxy ? (
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    {globalProxy.type}://{globalProxy.host}:{globalProxy.port}
+                  </span>
+                </div>
+              ) : (
+                <span className="text-sm text-text-muted">No global proxy configured</span>
+              )}
+              <Button
+                size="sm"
+                variant={globalProxy ? "secondary" : "primary"}
+                icon="settings"
+                onClick={() => { loadGlobalProxy(); setProxyModalOpen(true); }}
+              >
+                {globalProxy ? "Edit" : "Configure"}
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        <ProxyConfigModal
+          isOpen={proxyModalOpen}
+          onClose={() => setProxyModalOpen(false)}
+          level="global"
+          levelLabel="Global"
+          onSaved={loadGlobalProxy}
+        />
+
+        {/* ═══════ 6. Appearance ═══════ */}
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
@@ -612,190 +894,10 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* Data Management & Backups */}
-        <Card>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-green-500/10 text-green-500">
-              <span className="material-symbols-outlined text-[20px]">database</span>
-            </div>
-            <h3 className="text-lg font-semibold">Data & Backups</h3>
-          </div>
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between p-4 rounded-lg bg-bg border border-border">
-              <div>
-                <p className="font-medium">Database Location</p>
-                <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
-              </div>
-            </div>
-
-            {/* Backup/Restore Section */}
-            <div className="pt-3 border-t border-border/50">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-amber-500">backup</span>
-                  <p className="font-medium">Backup & Restore</p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setBackupsExpanded(!backupsExpanded);
-                    if (!backupsExpanded && backups.length === 0) loadBackups();
-                  }}
-                >
-                  {backupsExpanded ? "Hide" : "View Backups"}
-                </Button>
-              </div>
-              <p className="text-xs text-text-muted mb-3">
-                Backups are created automatically before every database change. Up to 10 versions are kept.
-              </p>
-
-              {restoreStatus.message && (
-                <div className={`p-3 rounded-lg mb-3 text-sm ${
-                  restoreStatus.type === "success"
-                    ? "bg-green-500/10 text-green-500 border border-green-500/20"
-                    : "bg-red-500/10 text-red-500 border border-red-500/20"
-                }`}>
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[16px]">
-                      {restoreStatus.type === "success" ? "check_circle" : "error"}
-                    </span>
-                    {restoreStatus.message}
-                  </div>
-                </div>
-              )}
-
-              {backupsExpanded && (
-                <div className="flex flex-col gap-2">
-                  {backupsLoading ? (
-                    <div className="flex items-center justify-center py-6 text-text-muted">
-                      <span className="material-symbols-outlined animate-spin text-[20px] mr-2">progress_activity</span>
-                      Loading backups...
-                    </div>
-                  ) : backups.length === 0 ? (
-                    <div className="text-center py-6 text-text-muted text-sm">
-                      <span className="material-symbols-outlined text-[32px] mb-2 block opacity-40">folder_off</span>
-                      No backups available yet. Backups will be created automatically when data changes.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-text-muted">{backups.length} backup(s) available</span>
-                        <button
-                          onClick={loadBackups}
-                          className="text-xs text-primary hover:underline flex items-center gap-1"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">refresh</span>
-                          Refresh
-                        </button>
-                      </div>
-                      {backups.map((backup) => (
-                        <div
-                          key={backup.id}
-                          className="flex items-center justify-between p-3 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-border/50 hover:border-border transition-colors"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="material-symbols-outlined text-[16px] text-amber-500">description</span>
-                              <span className="text-sm font-medium truncate">
-                                {new Date(backup.createdAt).toLocaleString("pt-BR")}
-                              </span>
-                              <Badge variant={backup.reason === "pre-restore" ? "warning" : "default"} size="sm">
-                                {backup.reason}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-text-muted ml-6">
-                              <span>{backup.connectionCount} connection(s)</span>
-                              <span>•</span>
-                              <span>{(backup.size / 1024).toFixed(1)} KB</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 ml-3">
-                            {confirmRestoreId === backup.id ? (
-                              <>
-                                <span className="text-xs text-amber-500 font-medium">Confirm?</span>
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  onClick={() => handleRestore(backup.id)}
-                                  loading={restoringId === backup.id}
-                                  className="!bg-amber-500 hover:!bg-amber-600"
-                                >
-                                  Yes
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => setConfirmRestoreId(null)}
-                                >
-                                  No
-                                </Button>
-                              </>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setConfirmRestoreId(backup.id)}
-                              >
-                                <span className="material-symbols-outlined text-[14px] mr-1">restore</span>
-                                Restore
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </Card>
-
-        {/* Global Proxy */}
-        <Card className="p-0 overflow-hidden">
-          <div className="p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="material-symbols-outlined text-xl text-primary">vpn_lock</span>
-              <h2 className="text-lg font-bold">Global Proxy</h2>
-            </div>
-            <p className="text-sm text-text-muted mb-4">
-              Configure a global outbound proxy for all API calls. Individual providers, combos, and keys can override this.
-            </p>
-            <div className="flex items-center gap-3">
-              {globalProxy ? (
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                    {globalProxy.type}://{globalProxy.host}:{globalProxy.port}
-                  </span>
-                </div>
-              ) : (
-                <span className="text-sm text-text-muted">No global proxy configured</span>
-              )}
-              <Button
-                size="sm"
-                variant={globalProxy ? "secondary" : "primary"}
-                icon="settings"
-                onClick={() => { loadGlobalProxy(); setProxyModalOpen(true); }}
-              >
-                {globalProxy ? "Edit" : "Configure"}
-              </Button>
-            </div>
-          </div>
-        </Card>
-
-        <ProxyConfigModal
-          isOpen={proxyModalOpen}
-          onClose={() => setProxyModalOpen(false)}
-          level="global"
-          levelLabel="Global"
-          onSaved={loadGlobalProxy}
-        />
-
         {/* App Info */}
         <div className="text-center text-sm text-text-muted py-4">
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
-          <p className="mt-1">Local Mode - All data stored on your machine</p>
+          <p className="mt-1">Local Mode — All data stored on your machine</p>
         </div>
       </div>
     </div>
