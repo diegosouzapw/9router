@@ -574,14 +574,13 @@ export default function ProviderDetailPage() {
         {renderModelsSection()}
 
         {/* Custom Models — available for ALL providers */}
-        {!isCompatible && (
-          <CustomModelsSection
-            providerId={providerId}
-            providerAlias={providerDisplayAlias}
-            copied={copied}
-            onCopy={copy}
-          />
-        )}
+        <CustomModelsSection
+          providerId={providerId}
+          providerAlias={providerDisplayAlias}
+          copied={copied}
+          onCopy={copy}
+          connections={connections}
+        />
 
       </Card>
 
@@ -814,11 +813,12 @@ PassthroughModelRow.propTypes = {
 
 // ============ Custom Models Section (for ALL providers) ============
 
-function CustomModelsSection({ providerId, providerAlias, copied, onCopy }) {
+function CustomModelsSection({ providerId, providerAlias, copied, onCopy, connections }) {
   const [customModels, setCustomModels] = useState([]);
   const [newModelId, setNewModelId] = useState("");
   const [newModelName, setNewModelName] = useState("");
   const [adding, setAdding] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const fetchCustomModels = useCallback(async () => {
@@ -875,15 +875,56 @@ function CustomModelsSection({ providerId, providerAlias, copied, onCopy }) {
     }
   };
 
+  const handleSync = async () => {
+    if (syncing) return;
+    const activeConnection = connections.find((conn) => conn.isActive !== false);
+    if (!activeConnection) return;
+
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/providers/${activeConnection.id}/models`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || "Failed to update models from /models");
+        return;
+      }
+      await fetchCustomModels();
+    } catch (e) {
+      console.error("Failed to sync provider models:", e);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const canSync = connections.some((conn) => conn.isActive !== false);
+
   return (
     <div className="mt-6 pt-6 border-t border-border">
-      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-        <span className="material-symbols-outlined text-base text-primary">tune</span>
-        Custom Models
-      </h3>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <span className="material-symbols-outlined text-base text-primary">tune</span>
+          Custom Models
+        </h3>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon="sync"
+          onClick={handleSync}
+          disabled={!canSync || syncing}
+        >
+          {syncing ? "Updating..." : "Update from /models"}
+        </Button>
+      </div>
       <p className="text-xs text-text-muted mb-3">
         Add model IDs not in the default list. These will be available for routing.
       </p>
+      {!canSync && (
+        <p className="text-xs text-text-muted mb-3">
+          Add an active connection to import models automatically.
+        </p>
+      )}
 
       {/* Add form */}
       <div className="flex items-end gap-2 mb-3">
@@ -965,6 +1006,10 @@ CustomModelsSection.propTypes = {
   providerAlias: PropTypes.string.isRequired,
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
+  connections: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string,
+    isActive: PropTypes.bool,
+  })).isRequired,
 };
 
 function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {

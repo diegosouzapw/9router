@@ -10,7 +10,8 @@ const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
 const LOCAL_PORT = 443;
 const ROUTER_URL = "http://localhost:20128/v1/chat/completions";
 const API_KEY = process.env.ROUTER_API_KEY;
-const DB_FILE = path.join(os.homedir(), ".9router", "db.json");
+const SQLITE_FILE = path.join(os.homedir(), ".9router", "storage.sqlite");
+const DB_FILE_LEGACY = path.join(os.homedir(), ".9router", "db.json");
 
 // Toggle logging (set true to enable file logging for debugging)
 const ENABLE_FILE_LOG = false;
@@ -92,12 +93,32 @@ function extractModel(body) {
 
 function getMappedModel(model) {
   if (!model) return null;
+
+  // Try SQLite first (new storage)
   try {
-    const db = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-    return db.mitmAlias?.antigravity?.[model] || null;
-  } catch {
-    return null;
+    if (fs.existsSync(SQLITE_FILE)) {
+      const Database = require("better-sqlite3");
+      const db = new Database(SQLITE_FILE, { readonly: true });
+      const row = db.prepare("SELECT value FROM key_value WHERE key = 'mitmAlias'").get();
+      db.close();
+      if (row) {
+        const mitmAlias = JSON.parse(row.value);
+        return mitmAlias?.antigravity?.[model] || null;
+      }
+    }
+  } catch (e) {
+    // Fall through to legacy
   }
+
+  // Fallback: legacy db.json
+  try {
+    if (fs.existsSync(DB_FILE_LEGACY)) {
+      const db = JSON.parse(fs.readFileSync(DB_FILE_LEGACY, "utf-8"));
+      return db.mitmAlias?.antigravity?.[model] || null;
+    }
+  } catch {}
+
+  return null;
 }
 
 async function passthrough(req, res, bodyBuffer) {

@@ -55,7 +55,7 @@ export function createSSEStream(options = {}) {
   let usage = null;
 
   // State for translate mode
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap } : null;
+  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
 
   // Track content length for usage estimation (both modes)
   let totalContentLength = 0;

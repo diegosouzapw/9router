@@ -12,18 +12,25 @@ export class CodexExecutor extends BaseExecutor {
   }
 
   /**
-   * Codex Responses endpoint is SSE-first.
-   * Always request event-stream from upstream, even when client requested stream=false.
+   * Override headers to add session_id per request.
+   * Codex Responses endpoint is SSE-first — always request event-stream.
    */
   buildHeaders(credentials, stream = true) {
-    return super.buildHeaders(credentials, true);
+    const headers = super.buildHeaders(credentials, true);
+    headers["session_id"] = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    return headers;
   }
 
   /**
    * Transform request before sending - inject default instructions if missing
    */
   transformRequest(model, body, stream, credentials) {
-    // Codex /responses rejects stream=false; we aggregate SSE back to JSON when needed.
+    // Ensure input is present and non-empty (Codex API rejects empty input)
+    if (!body.input || (Array.isArray(body.input) && body.input.length === 0)) {
+      body.input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "..." }] }];
+    }
+
+    // Ensure streaming is enabled (Codex API requires it)
     body.stream = true;
 
     // If no instructions provided, inject default Codex instructions
@@ -50,9 +57,16 @@ export class CodexExecutor extends BaseExecutor {
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
       const effort = body.reasoning_effort || modelEffort || 'medium';
-      body.reasoning = { effort };
+      body.reasoning = { effort, summary: "auto" };
+    } else if (!body.reasoning.summary) {
+      body.reasoning.summary = "auto";
     }
     delete body.reasoning_effort;
+
+    // Include reasoning encrypted content (required by Codex backend for reasoning models)
+    if (body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {
+      body.include = ["reasoning.encrypted_content"];
+    }
 
     // Remove unsupported parameters for Codex API
     delete body.temperature;

@@ -64,6 +64,7 @@ export {
   getCustomModels,
   getAllCustomModels,
   addCustomModel,
+  upsertCustomModels,
   removeCustomModel,
 
   // Proxy Config

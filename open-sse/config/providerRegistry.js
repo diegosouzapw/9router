@@ -110,9 +110,8 @@ export const REGISTRY = {
     authType: "oauth",
     authHeader: "bearer",
     headers: {
-      "Version": "0.92.0",
-      "Openai-Beta": "responses=experimental",
-      "User-Agent": "codex-cli/0.92.0 (Windows 10.0.26100; x64)"
+      "originator": "codex-cli",
+      "User-Agent": "codex-cli/1.0.18 (macOS; arm64)"
     },
     oauth: {
       clientIdEnv: "CODEX_OAUTH_CLIENT_ID",

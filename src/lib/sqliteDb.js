@@ -235,6 +235,9 @@ function getDbInstance() {
   return _db;
 }
 
+// Export DB instance getter for other modules (e.g. usageDb)
+export { getDbInstance as _getSharedDbInstance };
+
 // ──────────────── JSON → SQLite Migration ────────────────
 
 function migrateFromJson(db, jsonPath) {
@@ -1271,15 +1274,59 @@ export async function resetAllPricing() {
 
 // ──────────────── Custom Models ────────────────
 
+function normalizeStoredCustomModel(rawModel, defaultSource = "manual") {
+  if (!rawModel) return null;
+
+  const rawId = typeof rawModel === "string"
+    ? rawModel
+    : (rawModel.id || rawModel.model || "");
+  const id = String(rawId || "").trim();
+  if (!id) return null;
+
+  const rawName = typeof rawModel === "string"
+    ? rawModel
+    : (rawModel.name || rawModel.modelName || rawModel.id || rawModel.model || id);
+  const name = String(rawName || id).trim() || id;
+
+  const source = typeof rawModel === "object" && typeof rawModel.source === "string" && rawModel.source.trim()
+    ? rawModel.source.trim()
+    : defaultSource;
+
+  return { id, name, source };
+}
+
+function parseStoredCustomModels(value, defaultSource = "manual") {
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+
+    const deduped = [];
+    const seen = new Set();
+
+    for (const rawModel of parsed) {
+      const normalized = normalizeStoredCustomModel(rawModel, defaultSource);
+      if (!normalized || seen.has(normalized.id)) continue;
+      seen.add(normalized.id);
+      deduped.push(normalized);
+    }
+
+    return deduped;
+  } catch {
+    return [];
+  }
+}
+
 export async function getCustomModels(providerId) {
   const db = getDbInstance();
   if (providerId) {
     const row = db.prepare("SELECT value FROM key_value WHERE namespace = 'customModels' AND key = ?").get(providerId);
-    return row ? JSON.parse(row.value) : [];
+    return row ? parseStoredCustomModels(row.value) : [];
   }
   const rows = db.prepare("SELECT key, value FROM key_value WHERE namespace = 'customModels'").all();
   const result = {};
-  for (const row of rows) result[row.key] = JSON.parse(row.value);
+  for (const row of rows) result[row.key] = parseStoredCustomModels(row.value);
   return result;
 }
 
@@ -1287,23 +1334,92 @@ export async function getAllCustomModels() {
   const db = getDbInstance();
   const rows = db.prepare("SELECT key, value FROM key_value WHERE namespace = 'customModels'").all();
   const result = {};
-  for (const row of rows) result[row.key] = JSON.parse(row.value);
+  for (const row of rows) result[row.key] = parseStoredCustomModels(row.value);
   return result;
 }
 
-export async function addCustomModel(providerId, modelId, modelName) {
+export async function addCustomModel(providerId, modelId, modelName, source = "manual") {
   const db = getDbInstance();
   const row = db.prepare("SELECT value FROM key_value WHERE namespace = 'customModels' AND key = ?").get(providerId);
-  const models = row ? JSON.parse(row.value) : [];
+  const models = row ? parseStoredCustomModels(row.value) : [];
 
   const exists = models.find(m => m.id === modelId);
   if (exists) return exists;
 
-  const model = { id: modelId, name: modelName || modelId };
+  const model = {
+    id: modelId,
+    name: modelName || modelId,
+    source: typeof source === "string" && source.trim() ? source.trim() : "manual",
+  };
   models.push(model);
   db.prepare("INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('customModels', ?, ?)").run(providerId, JSON.stringify(models));
   backupDbFile("pre-write");
   return model;
+}
+
+/**
+ * Upsert models for a provider in bulk.
+ * By default, replaces previously synced entries while preserving manual entries.
+ */
+export async function upsertCustomModels(providerId, incomingModels = [], options = {}) {
+  const db = getDbInstance();
+  const source = typeof options.source === "string" && options.source.trim()
+    ? options.source.trim()
+    : "sync";
+  const replaceSource = options.replaceSource !== false;
+
+  const row = db.prepare("SELECT value FROM key_value WHERE namespace = 'customModels' AND key = ?").get(providerId);
+  const existing = row ? parseStoredCustomModels(row.value) : [];
+
+  const merged = [];
+  const indexById = new Map();
+
+  const upsert = (model) => {
+    const index = indexById.get(model.id);
+    if (index === undefined) {
+      indexById.set(model.id, merged.length);
+      merged.push(model);
+      return;
+    }
+    merged[index] = { ...merged[index], ...model };
+  };
+
+  for (const model of existing) {
+    if (replaceSource && model.source === source) continue;
+    upsert(model);
+  }
+
+  const seenIncoming = new Set();
+  let importedCount = 0;
+  for (const rawModel of Array.isArray(incomingModels) ? incomingModels : []) {
+    const normalized = normalizeStoredCustomModel(rawModel, source);
+    if (!normalized || seenIncoming.has(normalized.id)) continue;
+    seenIncoming.add(normalized.id);
+    const existingIndex = indexById.get(normalized.id);
+    if (existingIndex !== undefined) {
+      const existingModel = merged[existingIndex];
+      // Preserve manual entries when a synced model shares the same ID.
+      const preservedSource = existingModel?.source && existingModel.source !== source
+        ? existingModel.source
+        : source;
+      upsert({ ...normalized, source: preservedSource });
+    } else {
+      upsert({ ...normalized, source });
+    }
+    importedCount += 1;
+  }
+
+  if (merged.length === 0) {
+    db.prepare("DELETE FROM key_value WHERE namespace = 'customModels' AND key = ?").run(providerId);
+  } else {
+    db.prepare("INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('customModels', ?, ?)").run(providerId, JSON.stringify(merged));
+  }
+
+  backupDbFile("pre-write");
+  return {
+    models: merged,
+    importedCount,
+  };
 }
 
 export async function removeCustomModel(providerId, modelId) {
@@ -1311,7 +1427,7 @@ export async function removeCustomModel(providerId, modelId) {
   const row = db.prepare("SELECT value FROM key_value WHERE namespace = 'customModels' AND key = ?").get(providerId);
   if (!row) return false;
 
-  const models = JSON.parse(row.value);
+  const models = parseStoredCustomModels(row.value);
   const before = models.length;
   const filtered = models.filter(m => m.id !== modelId);
 
