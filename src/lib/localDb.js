@@ -1044,36 +1044,205 @@ export async function removeCustomModel(providerId, modelId) {
 
 // ============ Proxy Config ============
 
+const DEFAULT_PROXY_CONFIG = { global: null, providers: {}, combos: {}, keys: {} };
+
 /**
- * Get proxy configuration
- * @returns {Object} { global: string|null, providers: { providerId: string } }
+ * Migrate legacy string proxy values to structured objects.
+ * Old format: "http://user:pass@host:port" or "socks5://host:port"
+ * New format: { type, host, port, username, password }
  */
-export async function getProxyConfig() {
-  const db = await getDb();
-  return db.data.proxyConfig || { global: null, providers: {} };
+function migrateProxyEntry(value) {
+  if (!value) return null;
+  if (typeof value === "object" && value.type) return value; // already structured
+  if (typeof value !== "string") return null;
+
+  try {
+    const url = new URL(value);
+    return {
+      type: url.protocol.replace(":", "").replace("//", "") || "http",
+      host: url.hostname,
+      port: url.port || (url.protocol === "socks5:" ? "1080" : "8080"),
+      username: url.username || "",
+      password: url.password || "",
+    };
+  } catch {
+    // Plain host:port format
+    const parts = value.split(":");
+    return {
+      type: "http",
+      host: parts[0] || value,
+      port: parts[1] || "8080",
+      username: "",
+      password: "",
+    };
+  }
 }
 
 /**
- * Update proxy configuration (merge)
- * @param {Object} config - { global?: string, providers?: { providerId: string } }
+ * Get full proxy configuration (all 4 levels)
+ * @returns {Object} { global, providers, combos, keys }
+ */
+export async function getProxyConfig() {
+  const db = await getDb();
+  const raw = db.data.proxyConfig || { ...DEFAULT_PROXY_CONFIG };
+
+  // Ensure all levels exist
+  if (!raw.combos) raw.combos = {};
+  if (!raw.keys) raw.keys = {};
+  if (!raw.providers) raw.providers = {};
+
+  // Migrate legacy string values (one-time on read)
+  let migrated = false;
+  if (raw.global && typeof raw.global === "string") {
+    raw.global = migrateProxyEntry(raw.global);
+    migrated = true;
+  }
+  for (const [k, v] of Object.entries(raw.providers)) {
+    if (typeof v === "string") {
+      raw.providers[k] = migrateProxyEntry(v);
+      migrated = true;
+    }
+  }
+  if (migrated) {
+    db.data.proxyConfig = raw;
+    // Don't await write here to avoid lock issues — will be saved on next write
+  }
+
+  return raw;
+}
+
+/**
+ * Get proxy for a specific level and id
+ * @param {"global"|"provider"|"combo"|"key"} level
+ * @param {string} [id] - required for provider/combo/key
+ * @returns {Object|null} proxy entry or null
+ */
+export async function getProxyForLevel(level, id) {
+  const config = await getProxyConfig();
+  if (level === "global") return config.global || null;
+  const map = config[level + "s"] || config[level] || {};
+  return (id ? map[id] : null) || null;
+}
+
+/**
+ * Set proxy for a specific level and id
+ * @param {"global"|"provider"|"combo"|"key"} level
+ * @param {string|null} id - null for global
+ * @param {Object|null} proxy - structured proxy entry or null to clear
+ */
+export async function setProxyForLevel(level, id, proxy) {
+  return withWriteLock(async () => {
+    const db = await getDb();
+    if (!db.data.proxyConfig) db.data.proxyConfig = { ...DEFAULT_PROXY_CONFIG };
+    if (!db.data.proxyConfig.combos) db.data.proxyConfig.combos = {};
+    if (!db.data.proxyConfig.keys) db.data.proxyConfig.keys = {};
+    if (!db.data.proxyConfig.providers) db.data.proxyConfig.providers = {};
+
+    if (level === "global") {
+      db.data.proxyConfig.global = proxy || null;
+    } else {
+      const mapKey = level + "s"; // providers, combos, keys
+      if (!db.data.proxyConfig[mapKey]) db.data.proxyConfig[mapKey] = {};
+      if (proxy) {
+        db.data.proxyConfig[mapKey][id] = proxy;
+      } else {
+        delete db.data.proxyConfig[mapKey][id];
+      }
+    }
+
+    await db.write();
+    return db.data.proxyConfig;
+  });
+}
+
+/**
+ * Delete proxy at a specific level and id
+ */
+export async function deleteProxyForLevel(level, id) {
+  return setProxyForLevel(level, id, null);
+}
+
+/**
+ * Resolve effective proxy for a connection (key) using 4-level cascade:
+ * key → combo → provider → global
+ * @param {string} connectionId - provider connection ID
+ * @returns {{ proxy: Object|null, level: string, levelId: string|null }}
+ */
+export async function resolveProxyForConnection(connectionId) {
+  const config = await getProxyConfig();
+
+  // Level 1: Key-level
+  if (connectionId && config.keys?.[connectionId]) {
+    return { proxy: config.keys[connectionId], level: "key", levelId: connectionId };
+  }
+
+  // To check combo and provider, we need the connection info
+  const db = await getDb();
+  const connection = db.data.providerConnections?.find(c => c.id === connectionId);
+
+  if (connection) {
+    // Level 2: Combo-level — check all combos that contain this provider
+    if (config.combos && Object.keys(config.combos).length > 0) {
+      const combos = db.data.combos || [];
+      for (const combo of combos) {
+        if (config.combos[combo.id]) {
+          // Check if this combo uses this connection's provider
+          const comboModels = combo.models || [];
+          const usesProvider = comboModels.some(m => m.provider === connection.provider);
+          if (usesProvider) {
+            return { proxy: config.combos[combo.id], level: "combo", levelId: combo.id };
+          }
+        }
+      }
+    }
+
+    // Level 3: Provider-level
+    if (config.providers?.[connection.provider]) {
+      return { proxy: config.providers[connection.provider], level: "provider", levelId: connection.provider };
+    }
+  }
+
+  // Level 4: Global
+  if (config.global) {
+    return { proxy: config.global, level: "global", levelId: null };
+  }
+
+  return { proxy: null, level: "direct", levelId: null };
+}
+
+/**
+ * Update proxy configuration (merge — backward compatible)
+ * @param {Object} config - { global?, providers?, combos?, keys?, level?, id?, proxy? }
  */
 export async function setProxyConfig(config) {
+  // New-style: level-based update
+  if (config.level !== undefined) {
+    return setProxyForLevel(config.level, config.id || null, config.proxy);
+  }
+
+  // Legacy-style: merge all at once
   return withWriteLock(async () => {
     const db = await getDb();
     if (!db.data.proxyConfig) {
-      db.data.proxyConfig = { global: null, providers: {} };
-    }// Merge
+      db.data.proxyConfig = { ...DEFAULT_PROXY_CONFIG };
+    }
+    if (!db.data.proxyConfig.combos) db.data.proxyConfig.combos = {};
+    if (!db.data.proxyConfig.keys) db.data.proxyConfig.keys = {};
+    if (!db.data.proxyConfig.providers) db.data.proxyConfig.providers = {};
+
     if (config.global !== undefined) {
       db.data.proxyConfig.global = config.global || null;
     }
-    if (config.providers) {
-      db.data.proxyConfig.providers = {
-        ...db.data.proxyConfig.providers,
-        ...config.providers,
-      };
-      // Remove empty entries
-      for (const [k, v] of Object.entries(db.data.proxyConfig.providers)) {
-        if (!v) delete db.data.proxyConfig.providers[k];
+    for (const mapKey of ["providers", "combos", "keys"]) {
+      if (config[mapKey]) {
+        db.data.proxyConfig[mapKey] = {
+          ...db.data.proxyConfig[mapKey],
+          ...config[mapKey],
+        };
+        // Remove null/empty entries
+        for (const [k, v] of Object.entries(db.data.proxyConfig[mapKey])) {
+          if (!v) delete db.data.proxyConfig[mapKey][k];
+        }
       }
     }
     await db.write();

@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, Toggle, Select } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, Toggle, Select, ProxyConfigModal } from "@/shared/components";
 import { FREE_PROVIDERS, OAUTH_PROVIDERS, APIKEY_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -28,6 +28,8 @@ export default function ProviderDetailPage() {
   const { copied, copy } = useCopyToClipboard();
   const hasAutoOpened = useRef(false);
   const userDismissed = useRef(false);
+  const [proxyTarget, setProxyTarget] = useState(null);
+  const [proxyConfig, setProxyConfig] = useState(null);
 
   const providerInfo = providerNode
     ? {
@@ -124,6 +126,8 @@ export default function ProviderDetailPage() {
   useEffect(() => {
     fetchConnections();
     fetchAliases();
+    // Load proxy config for visual indicators
+    fetch("/api/settings/proxy").then(r => r.ok ? r.json() : null).then(c => setProxyConfig(c)).catch(() => {});
   }, [fetchConnections, fetchAliases]);
 
   // Auto-open Add Connection modal when no connections exist (better UX)
@@ -553,6 +557,8 @@ export default function ProviderDetailPage() {
                   setShowEditModal(true);
                 }}
                 onDelete={() => handleDelete(conn.id)}
+                onProxy={() => setProxyTarget({ level: "key", id: conn.id, label: conn.name || conn.email || conn.id })}
+                hasProxy={!!(proxyConfig?.keys?.[conn.id])}
               />
             ))}
           </div>
@@ -623,6 +629,16 @@ export default function ProviderDetailPage() {
           onSave={handleUpdateNode}
           onClose={() => setShowEditNodeModal(false)}
           isAnthropic={isAnthropicCompatible}
+        />
+      )}
+      {/* Proxy Config Modal */}
+      {proxyTarget && (
+        <ProxyConfigModal
+          isOpen={!!proxyTarget}
+          onClose={() => setProxyTarget(null)}
+          level={proxyTarget.level}
+          levelId={proxyTarget.id}
+          levelLabel={proxyTarget.label}
         />
       )}
     </div>
@@ -1260,7 +1276,7 @@ function getStatusPresentation(connection, effectiveStatus, isCooldown) {
   };
 }
 
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onToggleRateLimit, onRetest, isRetesting, onEdit, onDelete }) {
+function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onToggleRateLimit, onRetest, isRetesting, onEdit, onDelete, onProxy, hasProxy }) {
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
@@ -1349,6 +1365,15 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
               <span className="material-symbols-outlined text-[13px]">shield</span>
               {rateLimitEnabled ? "Protected" : "Unprotected"}
             </button>
+            {hasProxy && (
+              <>
+                <span className="text-text-muted/30 select-none">|</span>
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/15 text-primary" title="Proxy configured">
+                  <span className="material-symbols-outlined text-[13px]">vpn_lock</span>
+                  Proxy
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1374,6 +1399,9 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
         <div className="flex gap-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button onClick={onEdit} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary">
             <span className="material-symbols-outlined text-[18px]">edit</span>
+          </button>
+          <button onClick={onProxy} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary" title="Proxy config">
+            <span className="material-symbols-outlined text-[18px]">vpn_lock</span>
           </button>
           <button onClick={onDelete} className="p-2 hover:bg-red-500/10 rounded text-red-500">
             <span className="material-symbols-outlined text-[18px]">delete</span>

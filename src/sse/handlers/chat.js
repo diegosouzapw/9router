@@ -14,6 +14,8 @@ import { HTTP_STATUS } from "open-sse/config/constants.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getSettings, getCombos, getApiKeyMetadata } from "../../lib/localDb.js";
+import { resolveProxyForConnection } from "../../lib/localDb.js";
+import { logProxyEvent } from "../../lib/proxyLogger.js";
 
 /**
  * Handle chat completion request
@@ -181,6 +183,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     log.info("AUTH", `Using ${provider} account: ${accountId}...`);
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+
+    // Resolve proxy for this connection
+    let proxyInfo = null;
+    try {
+      proxyInfo = await resolveProxyForConnection(credentials.connectionId);
+    } catch (proxyErr) {
+      log.debug("PROXY", `Failed to resolve proxy: ${proxyErr.message}`);
+    }
+
+    const proxyStartTime = Date.now();
     
     // Use shared chatCore
     const result = await handleChatCore({
@@ -205,6 +217,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         await clearAccountError(credentials.connectionId, credentials);
       }
     });
+
+    const proxyLatency = Date.now() - proxyStartTime;
+
+    // Log proxy event
+    try {
+      const proxyData = proxyInfo?.proxy || null;
+      logProxyEvent({
+        status: result.success ? "success" : (result.status === 408 || result.status === 504 ? "timeout" : "error"),
+        proxy: proxyData,
+        level: proxyInfo?.level || "direct",
+        levelId: proxyInfo?.levelId || null,
+        provider,
+        targetUrl: `${provider}/${model}`,
+        latencyMs: proxyLatency,
+        error: result.success ? null : (result.error || null),
+        connectionId: credentials.connectionId,
+        comboId: comboName || null,
+        account: credentials.connectionId?.slice(0, 8) || null,
+      });
+    } catch (logErr) {
+      // Never let logging break the request pipeline
+    }
     
     if (result.success) return result.response;
 

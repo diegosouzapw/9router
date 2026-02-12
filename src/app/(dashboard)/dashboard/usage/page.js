@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { UsageAnalytics, RequestLoggerV2, CardSkeleton, SegmentedControl } from "@/shared/components";
+import { UsageAnalytics, RequestLoggerV2, ProxyLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
 import ProviderLimits from "./components/ProviderLimits";
 
 export default function UsagePage() {
@@ -13,6 +13,7 @@ export default function UsagePage() {
         options={[
           { value: "overview", label: "Overview" },
           { value: "logs", label: "Logger" },
+          { value: "proxy-logs", label: "Proxy" },
           { value: "limits", label: "Limits" },
         ]}
         value={activeTab}
@@ -26,6 +27,7 @@ export default function UsagePage() {
         </Suspense>
       )}
       {activeTab === "logs" && <RequestLoggerV2 />}
+      {activeTab === "proxy-logs" && <ProxyLogger />}
       {activeTab === "limits" && (
         <Suspense fallback={<CardSkeleton />}>
           <ProviderLimits />
