@@ -44,6 +44,22 @@ const STATUS_FILTERS = [
   { key: "combo", label: "Combo", icon: "hub" },
 ];
 
+// Column definitions for visibility toggles
+const COLUMNS = [
+  { key: "status", label: "Status" },
+  { key: "model", label: "Model" },
+  { key: "provider", label: "Provider" },
+  { key: "protocol", label: "Protocol" },
+  { key: "account", label: "Account" },
+  { key: "apiKey", label: "API Key" },
+  { key: "combo", label: "Combo" },
+  { key: "tokens", label: "Tokens" },
+  { key: "duration", label: "Duration" },
+  { key: "time", label: "Time" },
+];
+
+const DEFAULT_VISIBLE = Object.fromEntries(COLUMNS.map(c => [c.key, true]));
+
 function formatTime(isoString) {
   try {
     const d = new Date(isoString);
@@ -105,6 +121,25 @@ export default function RequestLoggerV2() {
   const [detailData, setDetailData] = useState(null);
   const intervalRef = useRef(null);
   const hasLoadedRef = useRef(false);
+
+  // Column visibility with localStorage persistence
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_VISIBLE;
+    try {
+      const saved = localStorage.getItem("loggerVisibleColumns");
+      return saved ? { ...DEFAULT_VISIBLE, ...JSON.parse(saved) } : DEFAULT_VISIBLE;
+    } catch {
+      return DEFAULT_VISIBLE;
+    }
+  });
+
+  const toggleColumn = useCallback((key) => {
+    setVisibleColumns(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem("loggerVisibleColumns", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
 
   const fetchLogs = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -429,6 +464,24 @@ export default function RequestLoggerV2() {
         })}
       </div>
 
+      {/* Column Visibility Toggles */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] text-text-muted uppercase tracking-wider mr-1">Columns</span>
+        {COLUMNS.map(col => (
+          <button
+            key={col.key}
+            onClick={() => toggleColumn(col.key)}
+            className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-all ${
+              visibleColumns[col.key]
+                ? "bg-primary/15 text-primary border-primary/30"
+                : "bg-bg-subtle text-text-muted border-border opacity-50 hover:opacity-80"
+            }`}
+          >
+            {col.label}
+          </button>
+        ))}
+      </div>
+
       {/* Table */}
       <Card className="overflow-hidden bg-black/5 dark:bg-black/20">
         <div className="p-0 overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
@@ -446,17 +499,17 @@ export default function RequestLoggerV2() {
           ) : (
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-10" style={{ backgroundColor: "var(--bg-primary, #0f1117)" }}>
-                <tr className="border-b border-border" style={{ backgroundColor: "var(--bg-primary, #0f1117)" }}>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Status</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Model</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Provider</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Protocol</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Account</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">API Key</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Combo</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Tokens</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Duration</th>
-                  <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Time</th>
+              <tr className="border-b border-border" style={{ backgroundColor: "var(--bg-primary, #0f1117)" }}>
+                  {visibleColumns.status && <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Status</th>}
+                  {visibleColumns.model && <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Model</th>}
+                  {visibleColumns.provider && <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Provider</th>}
+                  {visibleColumns.protocol && <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Protocol</th>}
+                  {visibleColumns.account && <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Account</th>}
+                  {visibleColumns.apiKey && <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">API Key</th>}
+                  {visibleColumns.combo && <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px]">Combo</th>}
+                  {visibleColumns.tokens && <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Tokens</th>}
+                  {visibleColumns.duration && <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Duration</th>}
+                  {visibleColumns.time && <th className="px-3 py-2.5 font-semibold text-text-muted uppercase tracking-wider text-[10px] text-right">Time</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/30">
@@ -467,12 +520,13 @@ export default function RequestLoggerV2() {
                   const providerColor = PROVIDER_COLORS[log.provider] || { bg: "#374151", text: "#fff", label: (log.provider || "-").toUpperCase() };
                   const isError = log.status >= 400;
 
-                  return (
+                    return (
                     <tr
                       key={log.id}
                       onClick={() => openDetail(log)}
                       className={`cursor-pointer hover:bg-primary/5 transition-colors ${isError ? "bg-red-500/5" : ""}`}
                     >
+                      {visibleColumns.status && (
                       <td className="px-3 py-2">
                         <span
                           className="inline-block px-2 py-0.5 rounded text-[10px] font-bold min-w-[36px] text-center"
@@ -481,7 +535,9 @@ export default function RequestLoggerV2() {
                           {log.status || "..."}
                         </span>
                       </td>
-                      <td className="px-3 py-2 font-medium text-primary font-mono text-[11px]">{log.model}</td>
+                      )}
+                      {visibleColumns.model && <td className="px-3 py-2 font-medium text-primary font-mono text-[11px]">{log.model}</td>}
+                      {visibleColumns.provider && (
                       <td className="px-3 py-2">
                         <span
                           className="inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase"
@@ -490,6 +546,8 @@ export default function RequestLoggerV2() {
                           {providerColor.label}
                         </span>
                       </td>
+                      )}
+                      {visibleColumns.protocol && (
                       <td className="px-3 py-2">
                         <span
                           className="inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase"
@@ -498,15 +556,21 @@ export default function RequestLoggerV2() {
                           {protocol.label}
                         </span>
                       </td>
+                      )}
+                      {visibleColumns.account && (
                       <td className="px-3 py-2 text-text-muted truncate max-w-[120px]" title={log.account}>
                         {maskAccount(log.account)}
                       </td>
+                      )}
+                      {visibleColumns.apiKey && (
                       <td
                         className="px-3 py-2 text-text-muted truncate max-w-[140px]"
                         title={log.apiKeyName || log.apiKeyId || "No API key"}
                       >
                         {formatApiKeyLabel(log.apiKeyName, log.apiKeyId)}
                       </td>
+                      )}
+                      {visibleColumns.combo && (
                       <td className="px-3 py-2">
                         {log.comboName ? (
                           <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
@@ -516,6 +580,8 @@ export default function RequestLoggerV2() {
                           <span className="text-text-muted text-[10px]">—</span>
                         )}
                       </td>
+                      )}
+                      {visibleColumns.tokens && (
                       <td className="px-3 py-2 text-right whitespace-nowrap">
                         <span className="text-text-muted">I:</span>{" "}
                         <span className="text-primary">{log.tokens?.in?.toLocaleString() || 0}</span>
@@ -523,8 +589,9 @@ export default function RequestLoggerV2() {
                         <span className="text-text-muted">O:</span>{" "}
                         <span className="text-emerald-400">{log.tokens?.out?.toLocaleString() || 0}</span>
                       </td>
-                      <td className="px-3 py-2 text-right text-text-muted font-mono">{formatDuration(log.duration)}</td>
-                      <td className="px-3 py-2 text-right text-text-muted">{formatTime(log.timestamp)}</td>
+                      )}
+                      {visibleColumns.duration && <td className="px-3 py-2 text-right text-text-muted font-mono">{formatDuration(log.duration)}</td>}
+                      {visibleColumns.time && <td className="px-3 py-2 text-right text-text-muted">{formatTime(log.timestamp)}</td>}
                     </tr>
                   );
                 })}

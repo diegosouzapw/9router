@@ -468,6 +468,7 @@ export async function POST(request, { params }) {
     }
 
     let result;
+    const startTime = Date.now();
     const runtime = await getProviderRuntimeStatus(connection.provider);
 
     if (runtime?.diagnosis) {
@@ -482,6 +483,8 @@ export async function POST(request, { params }) {
     } else {
       result = await testOAuthConnection(connection);
     }
+
+    const latencyMs = Date.now() - startTime;
 
     // Build update data
     const now = new Date().toISOString();
@@ -528,8 +531,10 @@ export async function POST(request, { params }) {
       error: result.error,
       refreshed: result.refreshed || false,
       diagnosis,
+      latencyMs,
       statusCode: result.statusCode || null,
       runtime: runtime || null,
+      testedAt: now,
     });
   } catch (error) {
     console.log("Error testing connection:", error);
