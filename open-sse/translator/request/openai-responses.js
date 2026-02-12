@@ -179,35 +179,85 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       continue; // Skip system messages in input
     }
 
-    // Convert user/assistant messages to input items
-    if (msg.role === "user" || msg.role === "assistant") {
-      const contentType = msg.role === "user" ? "input_text" : "output_text";
+    // Convert user messages
+    if (msg.role === "user") {
       const content = typeof msg.content === "string"
-        ? [{ type: contentType, text: msg.content }]
+        ? [{ type: "input_text", text: msg.content }]
         : Array.isArray(msg.content)
           ? msg.content.map(c => {
-            if (c.type === "text") return { type: contentType, text: c.text };
-            if (c.type === "image_url") return { type: contentType, text: "[Image content]" };
+            if (c.type === "text") return { type: "input_text", text: c.text };
+            if (c.type === "image_url") return c; // Pass through image content
             return c;
           })
-          : [];
+          : [{ type: "input_text", text: "" }];
 
       result.input.push({
         type: "message",
-        role: msg.role,
+        role: "user",
         content
       });
     }
 
-    // Convert tool calls
-    if (msg.role === "assistant" && msg.tool_calls) {
-      for (const tc of msg.tool_calls) {
+    // Convert assistant messages
+    if (msg.role === "assistant") {
+      // Add reasoning/thinking content BEFORE the assistant output
+      if (msg.reasoning_content) {
         result.input.push({
-          type: "function_call",
-          call_id: tc.id,
-          name: tc.function?.name || "",
-          arguments: tc.function?.arguments || "{}"
+          type: "reasoning",
+          id: `reasoning_${result.input.length}`,
+          summary: [{ type: "summary_text", text: msg.reasoning_content }]
         });
+      }
+
+      // Handle thinking blocks in array content
+      if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === "thinking" || block.type === "redacted_thinking") {
+            result.input.push({
+              type: "reasoning",
+              id: `reasoning_${result.input.length}`,
+              summary: [{ type: "summary_text", text: block.thinking || block.data || "..." }]
+            });
+          }
+        }
+      }
+
+      // Build the assistant output content
+      const outputContent = [];
+      if (typeof msg.content === "string" && msg.content) {
+        outputContent.push({ type: "output_text", text: msg.content });
+      } else if (Array.isArray(msg.content)) {
+        for (const c of msg.content) {
+          if (c.type === "text" && c.text) {
+            outputContent.push({ type: "output_text", text: c.text });
+          } else if (c.type === "thinking" || c.type === "redacted_thinking") {
+            // Already handled above as reasoning items
+            continue;
+          } else if (c.type !== "thinking" && c.type !== "redacted_thinking") {
+            outputContent.push(c);
+          }
+        }
+      }
+
+      // Only add the assistant message if there's actual content
+      if (outputContent.length > 0) {
+        result.input.push({
+          type: "message",
+          role: "assistant",
+          content: outputContent
+        });
+      }
+
+      // Convert tool_calls to function_call items
+      if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          result.input.push({
+            type: "function_call",
+            call_id: tc.id,
+            name: tc.function?.name || "",
+            arguments: tc.function?.arguments || "{}"
+          });
+        }
       }
     }
 
@@ -221,7 +271,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     }
   }
 
-  // If no system message, leave instructions empty (will be filled by executor)
+  // If no system message, leave instructions empty
   if (!hasSystemMessage) {
     result.instructions = "";
   }

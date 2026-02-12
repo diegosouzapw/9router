@@ -312,7 +312,7 @@ export default function ProfilePage() {
               <h3 className="text-lg font-semibold">System & Storage</h3>
               <p className="text-xs text-text-muted">All data stored locally on your machine</p>
             </div>
-            <Badge variant={storageHealth.driver === "sqlite" ? "success" : "default"} size="sm">
+            <Badge variant="success" size="sm">
               {storageHealth.driver || "json"}
             </Badge>
           </div>
@@ -389,7 +389,7 @@ export default function ProfilePage() {
               </Button>
             </div>
             <p className="text-xs text-text-muted mb-3">
-              SQLite snapshots are created automatically before restore and every 15 minutes when data changes.
+              Database snapshots are created automatically before restore and every 15 minutes when data changes.
               Retention: 24 hourly + 30 daily backups with smart rotation.
             </p>
 

@@ -136,8 +136,8 @@ export function prepareClaudeRequest(body, provider = null) {
           lastAssistantProcessed = true;
         }
 
-        // Handle thinking blocks for Anthropic endpoint only
-        if (provider === "claude") {
+        // Handle thinking blocks for Anthropic endpoints (native + compatible)
+        if (provider === "claude" || provider?.startsWith?.("anthropic-compatible-")) {
           let hasToolUse = false;
           let hasThinking = false;
           

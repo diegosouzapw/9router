@@ -2,6 +2,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/constants.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 
 // Prefix for Claude OAuth tool names to avoid conflicts
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
@@ -199,10 +200,25 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     }
   } else if (msg.role === "assistant") {
+    // Add reasoning_content as thinking block (OpenAI extended thinking format)
+    if (msg.reasoning_content) {
+      blocks.push({
+        type: "thinking",
+        thinking: msg.reasoning_content,
+        signature: DEFAULT_THINKING_CLAUDE_SIGNATURE
+      });
+    }
+
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === "text" && part.text) {
           blocks.push({ type: "text", text: part.text });
+        } else if (part.type === "thinking" || part.type === "redacted_thinking") {
+          // Preserve thinking blocks with signature
+          blocks.push({
+            ...part,
+            signature: part.signature || DEFAULT_THINKING_CLAUDE_SIGNATURE
+          });
         } else if (part.type === "tool_use") {
           // Tool name already has prefix from tool declarations, keep as-is
           blocks.push({ type: "tool_use", id: part.id, name: part.name, input: part.input });

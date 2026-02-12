@@ -77,7 +77,7 @@ async function checkConnection(conn) {
   const intervalMin = conn.healthCheckInterval ?? DEFAULT_HEALTH_CHECK_INTERVAL_MIN;
   if (intervalMin <= 0) return;
   if (!conn.isActive) return;
-  if (!conn.refreshToken) return;
+  if (!conn.refreshToken || typeof conn.refreshToken !== "string") return;
   if (!supportsTokenRefresh(conn.provider)) {
     const now = new Date().toISOString();
     await updateProviderConnection(conn.id, { lastHealthCheckAt: now });

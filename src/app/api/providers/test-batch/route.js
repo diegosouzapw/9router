@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { getProviderConnections } from "@/models";
-import { FREE_PROVIDERS, OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { FREE_PROVIDERS, OAUTH_PROVIDERS, APIKEY_PROVIDERS, OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 
 // Determine auth type group for a provider id
 function getAuthGroup(providerId) {
   if (FREE_PROVIDERS[providerId]) return "free";
   if (OAUTH_PROVIDERS[providerId]) return "oauth";
   if (APIKEY_PROVIDERS[providerId]) return "apikey";
-  // Compatible providers use apikey auth
+  if (typeof providerId === "string" && (providerId.startsWith(OPENAI_COMPATIBLE_PREFIX) || providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX))) return "compatible";
   return "apikey";
+}
+
+function isCompatibleProvider(providerId) {
+  return typeof providerId === "string" && (providerId.startsWith(OPENAI_COMPATIBLE_PREFIX) || providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX));
 }
 
 // POST /api/providers/test-batch - Test multiple connections by group
@@ -34,10 +38,12 @@ export async function POST(request) {
       connectionsToTest = allConnections.filter(c => getAuthGroup(c.provider) === "free");
     } else if (mode === "apikey") {
       connectionsToTest = allConnections.filter(c => getAuthGroup(c.provider) === "apikey");
+    } else if (mode === "compatible") {
+      connectionsToTest = allConnections.filter(c => isCompatibleProvider(c.provider));
     } else if (mode === "all") {
       connectionsToTest = allConnections;
     } else {
-      return NextResponse.json({ error: "Invalid mode. Use: provider, oauth, free, apikey, all" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid mode. Use: provider, oauth, free, apikey, compatible, all" }, { status: 400 });
     }
 
     if (connectionsToTest.length === 0) {

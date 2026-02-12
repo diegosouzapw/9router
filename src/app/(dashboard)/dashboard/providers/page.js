@@ -273,6 +273,21 @@ export default function ProvidersPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">API Key Compatible Providers</h2>
           <div className="flex gap-2">
+            {(compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0) && (
+              <button
+                onClick={() => handleBatchTest("compatible")}
+                disabled={!!testingMode}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  testingMode === "compatible"
+                    ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
+                    : "bg-bg-subtle border-border text-text-muted hover:text-text-primary hover:border-primary/40"
+                }`}
+                title="Test all Compatible connections"
+              >
+                <span className="material-symbols-outlined text-[14px]">{testingMode === "compatible" ? "sync" : "play_arrow"}</span>
+                {testingMode === "compatible" ? "Testing..." : "Test All"}
+              </button>
+            )}
             <Button size="sm" icon="add" onClick={() => setShowAddAnthropicCompatibleModal(true)}>
               Add Anthropic Compatible
             </Button>
