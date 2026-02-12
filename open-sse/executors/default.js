@@ -69,6 +69,19 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   /**
+   * For compatible providers, ensure the model name sent upstream
+   * is the clean model name without any internal routing prefix.
+   * e.g. "openapi-chat-anti/claude-opus-4-6-thinking" → "claude-opus-4-6-thinking"
+   */
+  transformRequest(model, body, stream, credentials) {
+    if (this.provider?.startsWith?.("openai-compatible-") || this.provider?.startsWith?.("anthropic-compatible-")) {
+      const cleanModel = model.includes("/") ? model.split("/").pop() : model;
+      return { ...body, model: cleanModel };
+    }
+    return body;
+  }
+
+  /**
    * Refresh credentials via the centralized tokenRefresh service.
    * Delegates to getAccessToken() which handles all providers with
    * race-condition protection (deduplication via refreshPromiseCache).

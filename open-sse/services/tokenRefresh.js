@@ -666,8 +666,8 @@ export function supportsTokenRefresh(provider) {
  * parallel OAuth requests.
  */
 export async function getAccessToken(provider, credentials, log) {
-  if (!credentials || !credentials.refreshToken) {
-    log?.warn?.("TOKEN_REFRESH", `No refresh token available for provider: ${provider}`);
+  if (!credentials || !credentials.refreshToken || typeof credentials.refreshToken !== "string") {
+    log?.warn?.("TOKEN_REFRESH", `No valid refresh token available for provider: ${provider}`);
     return null;
   }
 

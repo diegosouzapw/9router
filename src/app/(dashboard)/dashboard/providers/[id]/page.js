@@ -557,6 +557,7 @@ export default function ProviderDetailPage() {
                   setShowEditModal(true);
                 }}
                 onDelete={() => handleDelete(conn.id)}
+                onReauth={isOAuth ? () => setShowOAuthModal(true) : undefined}
                 onProxy={() => setProxyTarget({ level: "key", id: conn.id, label: conn.name || conn.email || conn.id })}
                 hasProxy={!!(proxyConfig?.keys?.[conn.id])}
               />
@@ -1276,7 +1277,7 @@ function getStatusPresentation(connection, effectiveStatus, isCooldown) {
   };
 }
 
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onToggleRateLimit, onRetest, isRetesting, onEdit, onDelete, onProxy, hasProxy }) {
+function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onToggleRateLimit, onRetest, isRetesting, onEdit, onDelete, onReauth, onProxy, hasProxy }) {
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
@@ -1397,6 +1398,11 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
           title={(connection.isActive ?? true) ? "Disable connection" : "Enable connection"}
         />
         <div className="flex gap-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onReauth && (
+            <button onClick={onReauth} className="p-2 hover:bg-amber-500/10 rounded text-amber-600 hover:text-amber-500" title="Re-authenticate this connection">
+              <span className="material-symbols-outlined text-[18px]">passkey</span>
+            </button>
+          )}
           <button onClick={onEdit} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary">
             <span className="material-symbols-outlined text-[18px]">edit</span>
           </button>
@@ -1440,6 +1446,7 @@ ConnectionRow.propTypes = {
   isRetesting: PropTypes.bool,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  onReauth: PropTypes.func,
 };
 
 function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, onSave, onClose }) {

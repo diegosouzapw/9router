@@ -76,20 +76,27 @@ function cloneDefaultData() {
 
 // Throttle: track last backup time to avoid flooding during rapid writes.
 let _lastBackupAt = 0;
-const BACKUP_THROTTLE_MS = 5000; // 5 seconds
-const MAX_DB_BACKUPS = 10;
+const BACKUP_THROTTLE_MS = 4 * 60 * 60 * 1000; // 4 hours
+const MAX_DB_BACKUPS = 20;
+const MIN_VALID_DB_SIZE = 5000; // Real data is typically >20KB; default structure is ~4KB
 
 /**
  * Create a timestamped backup of the DB file.
  * Called automatically before every write via withWriteLock.
- * Throttled to at most once every 5 seconds to avoid flooding.
+ * Throttled to at most once every hour to avoid flooding.
  */
-function backupDbFile(reason = "auto") {
+export function backupDbFile(reason = "auto") {
   try {
+    // NEVER create backups during build phase — the DB is in-memory only
+    if (isBuildPhase) return;
+
     if (!DB_FILE || !fs.existsSync(DB_FILE)) return;
     const stat = fs.statSync(DB_FILE);
-    // Skip if file is essentially empty (just default structure, no real data)
-    if (stat.size <= 100) return;
+    // Skip if file is too small to contain real data (default structure is ~4KB)
+    if (stat.size <= MIN_VALID_DB_SIZE) {
+      console.warn(`[DB] Backup SKIPPED — DB too small (${stat.size}B), likely empty/default data`);
+      return;
+    }
 
     // Throttle: skip if we already backed up recently
     const now = Date.now();
@@ -98,15 +105,46 @@ function backupDbFile(reason = "auto") {
 
     const backupDir = DB_BACKUPS_DIR || path.join(DATA_DIR, "db_backups");
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+
+    // Safety: refuse to back up if the DB shrank significantly vs the latest backup
+    // This prevents overwriting good backups with empty/corrupt data after a bad restart
+    const existingBackups = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith("db_") && f.endsWith(".json"))
+      .sort();
+    if (existingBackups.length > 0) {
+      const latestBackup = existingBackups[existingBackups.length - 1];
+      const latestStat = fs.statSync(path.join(backupDir, latestBackup));
+      if (latestStat.size > MIN_VALID_DB_SIZE && stat.size < latestStat.size * 0.5) {
+        console.warn(
+          `[DB] Backup SKIPPED — DB shrank from ${latestStat.size}B to ${stat.size}B (>50% reduction, possible data loss)`
+        );
+        return;
+      }
+    }
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const backupFile = path.join(backupDir, `db_${timestamp}_${reason}.json`);
     fs.copyFileSync(DB_FILE, backupFile);
     console.log(`[DB] Backup created: ${backupFile} (${stat.size} bytes)`);
-    // Enforce rotation — keep only last N backups
+
+    // Enforce rotation — keep only last N backups.
+    // Smart rotation: delete the SMALLEST files first (most likely empty/corrupt),
+    // preserving the largest (most complete) backups.
     const files = fs.readdirSync(backupDir).filter(f => f.startsWith("db_") && f.endsWith(".json")).sort();
     while (files.length > MAX_DB_BACKUPS) {
-      const oldest = files.shift();
-      fs.unlinkSync(path.join(backupDir, oldest));
+      let smallestIdx = 0;
+      let smallestSize = Infinity;
+      for (let i = 0; i < files.length - 1; i++) { // never delete the newest
+        try {
+          const fStat = fs.statSync(path.join(backupDir, files[i]));
+          if (fStat.size < smallestSize) {
+            smallestSize = fStat.size;
+            smallestIdx = i;
+          }
+        } catch { /* file gone, pick it for deletion */ smallestIdx = i; break; }
+      }
+      try { fs.unlinkSync(path.join(backupDir, files[smallestIdx])); } catch { /* already gone */ }
+      files.splice(smallestIdx, 1);
     }
   } catch (err) {
     console.error("[DB] Backup failed:", err.message);
@@ -1321,6 +1359,15 @@ export async function restoreDbBackup(backupId) {
   }
   if (!backupData || typeof backupData !== 'object') {
     throw new Error("Backup file has invalid structure");
+  }
+
+  // Warn if restoring a smaller backup over a larger current DB
+  const backupStat = fs.statSync(backupPath);
+  const currentStat = DB_FILE && fs.existsSync(DB_FILE) ? fs.statSync(DB_FILE) : null;
+  if (currentStat && backupStat.size < currentStat.size * 0.5) {
+    console.warn(
+      `[DB] WARNING: Restoring a smaller backup (${backupStat.size}B) over current DB (${currentStat.size}B)`
+    );
   }
 
   // Force a safety backup of current state before restoring (bypass throttle)

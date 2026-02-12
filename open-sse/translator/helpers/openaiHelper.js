@@ -5,7 +5,8 @@ export const VALID_OPENAI_CONTENT_TYPES = ["text", "image_url", "image"];
 export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_calls", "tool_result"];
 
 // Filter messages to OpenAI standard format
-// Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
+// Remove: redacted_thinking, and other non-OpenAI blocks
+// Convert: thinking blocks → reasoning_content on the message
 export function filterToOpenAIFormat(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
   
@@ -22,14 +23,20 @@ export function filterToOpenAIFormat(body) {
     // Handle array content
     if (Array.isArray(msg.content)) {
       const filteredContent = [];
+      let thinkingText = null;
       
       for (const block of msg.content) {
-        // Skip thinking blocks
-        if (block.type === "thinking" || block.type === "redacted_thinking") continue;
+        // Extract thinking blocks as reasoning_content (OpenAI extended thinking)
+        if (block.type === "thinking") {
+          thinkingText = block.thinking || block.text || "";
+          continue;
+        }
+        // Skip redacted thinking
+        if (block.type === "redacted_thinking") continue;
         
         // Only keep valid OpenAI content types
         if (VALID_OPENAI_CONTENT_TYPES.includes(block.type)) {
-          // Remove signature field if exists
+          // Remove signature and cache_control fields
           const { signature, cache_control, ...cleanBlock } = block;
           filteredContent.push(cleanBlock);
         } else if (block.type === "tool_use") {
@@ -47,7 +54,12 @@ export function filterToOpenAIFormat(body) {
         filteredContent.push({ type: "text", text: "" });
       }
       
-      return { ...msg, content: filteredContent };
+      const result = { ...msg, content: filteredContent };
+      // Attach thinking as reasoning_content for OpenAI extended thinking format
+      if (thinkingText && msg.role === "assistant") {
+        result.reasoning_content = thinkingText;
+      }
+      return result;
     }
     
     return msg;

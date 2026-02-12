@@ -46,12 +46,17 @@ const OAUTH_TEST_CONFIG = {
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
+    refreshable: true,
   },
   qwen: {
     url: "https://portal.qwen.ai/v1/models",
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
+    refreshable: true,
+  },
+  cursor: {
+    checkExpiry: true,
   },
   "kimi-coding": {
     checkExpiry: true,
@@ -351,8 +356,9 @@ async function testOAuthConnection(connection) {
       };
     }
 
-    // If 401 and we haven't tried refresh yet, try refresh now
-    if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
+    // If 401/403 and we haven't tried refresh yet, try refresh now
+    // (attempt refresh for ANY provider with a refreshToken, not just those marked refreshable)
+    if ((res.status === 401 || res.status === 403) && !refreshed && connection.refreshToken && typeof connection.refreshToken === "string") {
       const tokens = await refreshOAuthToken(connection);
       if (tokens) {
         // Retry with new token
