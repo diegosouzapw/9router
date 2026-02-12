@@ -1,5 +1,28 @@
 import { NextResponse } from "next/server";
 import { listDbBackups, restoreDbBackup } from "@/lib/localDb";
+import { createSqliteBackup, isSqliteStorageEnabled } from "@/lib/storage/sqlite.js";
+
+/**
+ * PUT /api/db-backups — Trigger a manual backup snapshot.
+ */
+export async function PUT() {
+  try {
+    if (!isSqliteStorageEnabled()) {
+      return NextResponse.json(
+        { error: "Manual backup is only available in SQLite mode" },
+        { status: 400 }
+      );
+    }
+    const result = createSqliteBackup({ reason: "manual", force: true });
+    if (!result) {
+      return NextResponse.json({ message: "No changes since last backup" });
+    }
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error("[API] Error creating manual backup:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
 
 /**
  * GET /api/db-backups — List available database backups.
