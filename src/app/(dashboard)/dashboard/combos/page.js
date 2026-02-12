@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ProxyConfigModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 // Validate combo name: letters, numbers, -, _, /, .
@@ -32,9 +32,12 @@ export default function CombosPage() {
   const [testResults, setTestResults] = useState(null);
   const [testingCombo, setTestingCombo] = useState(null);
   const { copied, copy } = useCopyToClipboard();
+  const [proxyTargetCombo, setProxyTargetCombo] = useState(null);
+  const [proxyConfig, setProxyConfig] = useState(null);
 
   useEffect(() => {
     fetchData();
+    fetch("/api/settings/proxy").then(r => r.ok ? r.json() : null).then(c => setProxyConfig(c)).catch(() => {});
   }, []);
 
   const fetchData = async () => {
@@ -201,6 +204,8 @@ export default function CombosPage() {
               onDuplicate={() => handleDuplicate(combo)}
               onTest={() => handleTestCombo(combo)}
               testing={testingCombo === combo.name}
+              onProxy={() => setProxyTargetCombo(combo)}
+              hasProxy={!!(proxyConfig?.combos?.[combo.id])}
             />
           ))}
         </div>
@@ -235,6 +240,17 @@ export default function CombosPage() {
         onSave={(data) => handleUpdate(editingCombo.id, data)}
         activeProviders={activeProviders}
       />
+
+      {/* Proxy Config Modal */}
+      {proxyTargetCombo && (
+        <ProxyConfigModal
+          isOpen={!!proxyTargetCombo}
+          onClose={() => setProxyTargetCombo(null)}
+          level="combo"
+          levelId={proxyTargetCombo.id}
+          levelLabel={proxyTargetCombo.name}
+        />
+      )}
     </div>
   );
 }
@@ -242,7 +258,7 @@ export default function CombosPage() {
 // ─────────────────────────────────────────────
 // Combo Card
 // ─────────────────────────────────────────────
-function ComboCard({ combo, metrics, copied, onCopy, onEdit, onDelete, onDuplicate, onTest, testing }) {
+function ComboCard({ combo, metrics, copied, onCopy, onEdit, onDelete, onDuplicate, onTest, testing, onProxy, hasProxy }) {
   const strategy = combo.strategy || "priority";
   const models = combo.models || [];
 
@@ -267,6 +283,12 @@ function ComboCard({ combo, metrics, copied, onCopy, onEdit, onDelete, onDuplica
               }`}>
                 {strategy}
               </span>
+              {hasProxy && (
+                <span className="text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded-full bg-primary/15 text-primary flex items-center gap-0.5" title="Proxy configured">
+                  <span className="material-symbols-outlined text-[11px]">vpn_lock</span>
+                  proxy
+                </span>
+              )}
               <button
                 onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
                 className="p-0.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
@@ -337,6 +359,13 @@ function ComboCard({ combo, metrics, copied, onCopy, onEdit, onDelete, onDuplica
             title="Duplicate"
           >
             <span className="material-symbols-outlined text-[16px]">content_copy</span>
+          </button>
+          <button
+            onClick={onProxy}
+            className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors"
+            title="Proxy configuration"
+          >
+            <span className="material-symbols-outlined text-[16px]">vpn_lock</span>
           </button>
           <button
             onClick={onEdit}
