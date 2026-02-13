@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { cn } from "@/shared/utils/cn";
 
 export default function Input({
@@ -15,28 +16,40 @@ export default function Input({
   required = false,
   className,
   inputClassName,
+  id: externalId,
   ...props
 }) {
+  const generatedId = useId();
+  const inputId = externalId || generatedId;
+  const errorId = error ? `${inputId}-error` : undefined;
+  const hintId = hint && !error ? `${inputId}-hint` : undefined;
+  const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
+
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       {label && (
-        <label className="text-sm font-medium text-text-main">
+        <label htmlFor={inputId} className="text-sm font-medium text-text-main">
           {label}
-          {required && <span className="text-red-500 ml-1">*</span>}
+          {required && <span className="text-red-500 ml-1" aria-hidden="true">*</span>}
         </label>
       )}
       <div className="relative">
         {icon && (
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-text-muted">
-            <span className="material-symbols-outlined text-[20px]">{icon}</span>
+            <span className="material-symbols-outlined text-[20px]" aria-hidden="true">{icon}</span>
           </div>
         )}
         <input
+          id={inputId}
           type={type}
           placeholder={placeholder}
           value={value}
           onChange={onChange}
           disabled={disabled}
+          required={required}
+          aria-required={required || undefined}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
           className={cn(
             "w-full py-2 px-3 text-sm text-text-main",
             "bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md",
@@ -55,15 +68,14 @@ export default function Input({
         />
       </div>
       {error && (
-        <p className="text-xs text-red-500 flex items-center gap-1">
-          <span className="material-symbols-outlined text-[14px]">error</span>
+        <p id={errorId} className="text-xs text-red-500 flex items-center gap-1" role="alert">
+          <span className="material-symbols-outlined text-[14px]" aria-hidden="true">error</span>
           {error}
         </p>
       )}
       {hint && !error && (
-        <p className="text-xs text-text-muted">{hint}</p>
+        <p id={hintId} className="text-xs text-text-muted">{hint}</p>
       )}
     </div>
   );
 }
-

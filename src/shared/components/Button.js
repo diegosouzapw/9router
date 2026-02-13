@@ -40,16 +40,17 @@ export default function Button({
         className
       )}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
     >
       {loading ? (
-        <span className="material-symbols-outlined animate-spin text-[18px] pointer-events-none">progress_activity</span>
+        <span className="material-symbols-outlined animate-spin text-[18px] pointer-events-none" aria-hidden="true">progress_activity</span>
       ) : icon ? (
-        <span className="material-symbols-outlined text-[18px] pointer-events-none">{icon}</span>
+        <span className="material-symbols-outlined text-[18px] pointer-events-none" aria-hidden="true">{icon}</span>
       ) : null}
       {children}
       {iconRight && !loading && (
-        <span className="material-symbols-outlined text-[18px] pointer-events-none">{iconRight}</span>
+        <span className="material-symbols-outlined text-[18px] pointer-events-none" aria-hidden="true">{iconRight}</span>
       )}
     </button>
   );
