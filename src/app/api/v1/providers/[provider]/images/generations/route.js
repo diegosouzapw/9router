@@ -1,8 +1,8 @@
-import { handleImageGeneration } from "open-sse/handlers/imageGeneration.js";
-import { errorResponse } from "open-sse/utils/error.js";
-import { HTTP_STATUS } from "open-sse/config/constants.js";
+import { handleImageGeneration } from "@9router/open-sse/handlers/imageGeneration.js";
+import { errorResponse } from "@9router/open-sse/utils/error.js";
+import { HTTP_STATUS } from "@9router/open-sse/config/constants.js";
 import { getProviderCredentials, extractApiKey, isValidApiKey } from "@/sse/services/auth.js";
-import { getImageProvider } from "open-sse/config/imageRegistry.js";
+import { getImageProvider } from "@9router/open-sse/config/imageRegistry.js";
 import * as log from "@/sse/utils/logger.js";
 import { toJsonErrorPayload } from "@/shared/utils/upstreamError";
 
@@ -70,7 +70,10 @@ export async function POST(request, { params }) {
 
   const credentials = await getProviderCredentials(rawProvider);
   if (!credentials) {
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for image provider: ${rawProvider}`);
+    return errorResponse(
+      HTTP_STATUS.BAD_REQUEST,
+      `No credentials for image provider: ${rawProvider}`
+    );
   }
 
   const result = await handleImageGeneration({ body, credentials, log });

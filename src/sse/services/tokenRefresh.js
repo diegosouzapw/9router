@@ -1,6 +1,6 @@
 // Re-export from open-sse with local logger
 import * as log from "../utils/logger.js";
-import { updateProviderConnection } from "../../lib/localDb.js";
+import { updateProviderConnection } from "@/lib/localDb.js";
 import {
   TOKEN_EXPIRY_BUFFER_MS as BUFFER_MS,
   refreshAccessToken as _refreshAccessToken,
@@ -14,53 +14,48 @@ import {
   getAccessToken as _getAccessToken,
   refreshTokenByProvider as _refreshTokenByProvider,
   formatProviderCredentials as _formatProviderCredentials,
-  getAllAccessTokens as _getAllAccessTokens
-} from "open-sse/services/tokenRefresh.js";
+  getAllAccessTokens as _getAllAccessTokens,
+} from "@9router/open-sse/services/tokenRefresh.js";
 
 export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
 
 // Wrap functions with local logger
-export const refreshAccessToken = (provider, refreshToken, credentials) => 
+export const refreshAccessToken = (provider, refreshToken, credentials) =>
   _refreshAccessToken(provider, refreshToken, credentials, log);
 
-export const refreshClaudeOAuthToken = (refreshToken) => 
+export const refreshClaudeOAuthToken = (refreshToken) =>
   _refreshClaudeOAuthToken(refreshToken, log);
 
-export const refreshGoogleToken = (refreshToken, clientId, clientSecret) => 
+export const refreshGoogleToken = (refreshToken, clientId, clientSecret) =>
   _refreshGoogleToken(refreshToken, clientId, clientSecret, log);
 
-export const refreshQwenToken = (refreshToken) => 
-  _refreshQwenToken(refreshToken, log);
+export const refreshQwenToken = (refreshToken) => _refreshQwenToken(refreshToken, log);
 
-export const refreshCodexToken = (refreshToken) => 
-  _refreshCodexToken(refreshToken, log);
+export const refreshCodexToken = (refreshToken) => _refreshCodexToken(refreshToken, log);
 
-export const refreshIflowToken = (refreshToken) => 
-  _refreshIflowToken(refreshToken, log);
+export const refreshIflowToken = (refreshToken) => _refreshIflowToken(refreshToken, log);
 
-export const refreshGitHubToken = (refreshToken) => 
-  _refreshGitHubToken(refreshToken, log);
+export const refreshGitHubToken = (refreshToken) => _refreshGitHubToken(refreshToken, log);
 
-export const refreshCopilotToken = (githubAccessToken) => 
+export const refreshCopilotToken = (githubAccessToken) =>
   _refreshCopilotToken(githubAccessToken, log);
 
-export const getAccessToken = (provider, credentials) => 
+export const getAccessToken = (provider, credentials) =>
   _getAccessToken(provider, credentials, log);
 
-export const refreshTokenByProvider = (provider, credentials) => 
+export const refreshTokenByProvider = (provider, credentials) =>
   _refreshTokenByProvider(provider, credentials, log);
 
-export const formatProviderCredentials = (provider, credentials) => 
+export const formatProviderCredentials = (provider, credentials) =>
   _formatProviderCredentials(provider, credentials, log);
 
-export const getAllAccessTokens = (userInfo) => 
-  _getAllAccessTokens(userInfo, log);
+export const getAllAccessTokens = (userInfo) => _getAllAccessTokens(userInfo, log);
 
 // Local-specific: Update credentials in localDb
 export async function updateProviderCredentials(connectionId, newCredentials) {
   try {
     const updates = {};
-    
+
     if (newCredentials.accessToken) {
       updates.accessToken = newCredentials.accessToken;
     }
@@ -74,11 +69,11 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
     if (newCredentials.providerSpecificData) {
       updates.providerSpecificData = newCredentials.providerSpecificData;
     }
-    
+
     const result = await updateProviderConnection(connectionId, updates);
-    log.info("TOKEN_REFRESH", "Credentials updated in localDb", { 
-      connectionId, 
-      success: !!result 
+    log.info("TOKEN_REFRESH", "Credentials updated in localDb", {
+      connectionId,
+      success: !!result,
     });
     return !!result;
   } catch (error) {
@@ -102,20 +97,20 @@ export async function checkAndRefreshToken(provider, credentials) {
     if (expiresAt - now < TOKEN_EXPIRY_BUFFER_MS) {
       log.info("TOKEN_REFRESH", "Token expiring soon, refreshing proactively", {
         provider,
-        expiresIn: Math.round((expiresAt - now) / 1000)
+        expiresIn: Math.round((expiresAt - now) / 1000),
       });
 
       const newCredentials = await getAccessToken(provider, updatedCredentials);
       if (newCredentials && newCredentials.accessToken) {
         await updateProviderCredentials(updatedCredentials.connectionId, newCredentials);
-        
+
         updatedCredentials = {
           ...updatedCredentials,
           accessToken: newCredentials.accessToken,
           refreshToken: newCredentials.refreshToken || updatedCredentials.refreshToken,
           expiresAt: newCredentials.expiresIn
             ? new Date(Date.now() + newCredentials.expiresIn * 1000).toISOString()
-            : updatedCredentials.expiresAt
+            : updatedCredentials.expiresAt,
         };
       }
     }
@@ -129,7 +124,7 @@ export async function checkAndRefreshToken(provider, credentials) {
     if (copilotExpiresAt - now < TOKEN_EXPIRY_BUFFER_MS) {
       log.info("TOKEN_REFRESH", "Copilot token expiring soon, refreshing proactively", {
         provider,
-        expiresIn: Math.round((copilotExpiresAt - now) / 1000)
+        expiresIn: Math.round((copilotExpiresAt - now) / 1000),
       });
 
       const copilotToken = await refreshCopilotToken(updatedCredentials.accessToken);
@@ -138,14 +133,14 @@ export async function checkAndRefreshToken(provider, credentials) {
           providerSpecificData: {
             ...updatedCredentials.providerSpecificData,
             copilotToken: copilotToken.token,
-            copilotTokenExpiresAt: copilotToken.expiresAt
-          }
+            copilotTokenExpiresAt: copilotToken.expiresAt,
+          },
         });
-        
+
         updatedCredentials.providerSpecificData = {
           ...updatedCredentials.providerSpecificData,
           copilotToken: copilotToken.token,
-          copilotTokenExpiresAt: copilotToken.expiresAt
+          copilotTokenExpiresAt: copilotToken.expiresAt,
         };
       }
     }
@@ -164,8 +159,8 @@ export async function refreshGitHubAndCopilotTokens(credentials) {
         ...newGitHubCredentials,
         providerSpecificData: {
           copilotToken: copilotToken.token,
-          copilotTokenExpiresAt: copilotToken.expiresAt
-        }
+          copilotTokenExpiresAt: copilotToken.expiresAt,
+        },
       };
     }
   }

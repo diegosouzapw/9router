@@ -1,7 +1,7 @@
 import { getProviderConnections, getAllCustomModels } from "@/lib/localDb";
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { getAllEmbeddingModels } from "open-sse/config/embeddingRegistry.js";
-import { getAllImageModels } from "open-sse/config/imageRegistry.js";
+import { getAllEmbeddingModels } from "@9router/open-sse/config/embeddingRegistry.js";
+import { getAllImageModels } from "@9router/open-sse/config/imageRegistry.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 
 /**
@@ -11,7 +11,7 @@ import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 export async function GET() {
   try {
     const connections = await getProviderConnections();
-    const activeProviders = new Set(connections.map(c => c.provider));
+    const activeProviders = new Set(connections.map((c) => c.provider));
     const customModelsMap = await getAllCustomModels().catch(() => ({}));
 
     const catalog = {};
@@ -88,7 +88,7 @@ export async function GET() {
       for (const model of models) {
         const fullId = `${alias}/${model.id}`;
         // Skip duplicates
-        if (catalog[alias].models.some(m => m.id === fullId)) continue;
+        if (catalog[alias].models.some((m) => m.id === fullId)) continue;
         catalog[alias].models.push({
           id: fullId,
           name: model.name || model.id,

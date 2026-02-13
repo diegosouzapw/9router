@@ -1,8 +1,8 @@
 import { handleChat } from "@/sse/handlers/chat.js";
-import { initTranslators } from "open-sse/translator/index.js";
-import { errorResponse } from "open-sse/utils/error.js";
-import { HTTP_STATUS } from "open-sse/config/constants.js";
-import { getRegistryEntry } from "open-sse/config/providerRegistry.js";
+import { initTranslators } from "@9router/open-sse/translator/index.js";
+import { errorResponse } from "@9router/open-sse/utils/error.js";
+import { HTTP_STATUS } from "@9router/open-sse/config/constants.js";
+import { getRegistryEntry } from "@9router/open-sse/config/providerRegistry.js";
 
 let initialized = false;
 
@@ -58,7 +58,12 @@ export async function POST(request, { params }) {
     const hasProviderPrefix = modelParts.length >= 2;
     const modelProvider = hasProviderPrefix ? modelParts[0] : null;
 
-    if (hasProviderPrefix && modelProvider !== providerAlias && modelProvider !== rawProvider && modelProvider !== providerEntry.id) {
+    if (
+      hasProviderPrefix &&
+      modelProvider !== providerAlias &&
+      modelProvider !== rawProvider &&
+      modelProvider !== providerEntry.id
+    ) {
       return errorResponse(
         HTTP_STATUS.BAD_REQUEST,
         `Model "${body.model}" does not belong to provider "${rawProvider}". Expected prefix: ${providerAlias}/`

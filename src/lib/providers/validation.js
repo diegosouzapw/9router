@@ -1,4 +1,4 @@
-import { getRegistryEntry } from "open-sse/config/providerRegistry.js";
+import { getRegistryEntry } from "@9router/open-sse/config/providerRegistry.js";
 import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
@@ -42,7 +42,11 @@ function resolveChatUrl(provider, baseUrl, providerSpecificData = {}) {
     return `${normalized}/chat/completions`;
   }
 
-  if (normalized.endsWith("/chat/completions") || normalized.endsWith("/responses") || normalized.endsWith("/chat")) {
+  if (
+    normalized.endsWith("/chat/completions") ||
+    normalized.endsWith("/responses") ||
+    normalized.endsWith("/chat")
+  ) {
     return normalized;
   }
 
@@ -56,7 +60,7 @@ function resolveChatUrl(provider, baseUrl, providerSpecificData = {}) {
 function buildBearerHeaders(apiKey) {
   return {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${apiKey}`,
+    Authorization: `Bearer ${apiKey}`,
   };
 }
 
@@ -126,12 +130,7 @@ async function validateOpenAILikeProvider({
   return { valid: true, error: null };
 }
 
-async function validateAnthropicLikeProvider({
-  apiKey,
-  baseUrl,
-  modelId,
-  headers = {},
-}) {
+async function validateAnthropicLikeProvider({ apiKey, baseUrl, modelId, headers = {} }) {
   if (!baseUrl) {
     return { valid: false, error: "Missing base URL" };
   }
@@ -226,7 +225,7 @@ async function validateAnthropicCompatibleProvider({ apiKey, providerSpecificDat
       "Content-Type": "application/json",
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
-      "Authorization": `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
   });
 
@@ -241,11 +240,7 @@ async function validateAnthropicCompatibleProvider({ apiKey, providerSpecificDat
   return { valid: false, error: `Validation failed: ${response.status}` };
 }
 
-export async function validateProviderApiKey({
-  provider,
-  apiKey,
-  providerSpecificData = {},
-}) {
+export async function validateProviderApiKey({ provider, apiKey, providerSpecificData = {} }) {
   if (!provider || !apiKey) {
     return { valid: false, error: "Provider and API key required", unsupported: false };
   }

@@ -1,12 +1,8 @@
-import { handleImageGeneration } from "open-sse/handlers/imageGeneration.js";
-import {
-  getProviderCredentials,
-  extractApiKey,
-  isValidApiKey,
-} from "@/sse/services/auth.js";
-import { parseImageModel, getAllImageModels } from "open-sse/config/imageRegistry.js";
-import { errorResponse } from "open-sse/utils/error.js";
-import { HTTP_STATUS } from "open-sse/config/constants.js";
+import { handleImageGeneration } from "@9router/open-sse/handlers/imageGeneration.js";
+import { getProviderCredentials, extractApiKey, isValidApiKey } from "@/sse/services/auth.js";
+import { parseImageModel, getAllImageModels } from "@9router/open-sse/config/imageRegistry.js";
+import { errorResponse } from "@9router/open-sse/utils/error.js";
+import { HTTP_STATUS } from "@9router/open-sse/config/constants.js";
 import * as log from "@/sse/utils/logger.js";
 import { toJsonErrorPayload } from "@/shared/utils/upstreamError";
 
@@ -18,8 +14,8 @@ export async function OPTIONS() {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "*"
-    }
+      "Access-Control-Allow-Headers": "*",
+    },
   });
 }
 
@@ -28,19 +24,22 @@ export async function OPTIONS() {
  */
 export async function GET() {
   const models = getAllImageModels();
-  return new Response(JSON.stringify({
-    object: "list",
-    data: models.map(m => ({
-      id: m.id,
-      object: "model",
-      created: Math.floor(Date.now() / 1000),
-      owned_by: m.provider,
-      type: "image",
-      supported_sizes: m.supportedSizes,
-    })),
-  }), {
-    headers: { "Content-Type": "application/json" }
-  });
+  return new Response(
+    JSON.stringify({
+      object: "list",
+      data: models.map((m) => ({
+        id: m.id,
+        object: "model",
+        created: Math.floor(Date.now() / 1000),
+        owned_by: m.provider,
+        type: "image",
+        supported_sizes: m.supportedSizes,
+      })),
+    }),
+    {
+      headers: { "Content-Type": "application/json" },
+    }
+  );
 }
 
 /**
@@ -78,7 +77,10 @@ export async function POST(request) {
   // Parse model to get provider
   const { provider } = parseImageModel(body.model);
   if (!provider) {
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, `Invalid image model: ${body.model}. Use format: provider/model`);
+    return errorResponse(
+      HTTP_STATUS.BAD_REQUEST,
+      `Invalid image model: ${body.model}. Use format: provider/model`
+    );
   }
 
   // Get credentials for the image provider
@@ -92,16 +94,13 @@ export async function POST(request) {
   if (result.success) {
     return new Response(JSON.stringify(result.data), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   }
 
-  const errorPayload = toJsonErrorPayload(
-    result.error,
-    "Image generation provider error"
-  );
+  const errorPayload = toJsonErrorPayload(result.error, "Image generation provider error");
   return new Response(JSON.stringify(errorPayload), {
     status: result.status,
-    headers: { "Content-Type": "application/json" }
+    headers: { "Content-Type": "application/json" },
   });
 }

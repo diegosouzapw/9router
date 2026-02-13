@@ -19,7 +19,9 @@ export async function getSettings() {
 
 export async function updateSettings(updates) {
   const db = getDbInstance();
-  const insert = db.prepare("INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('settings', ?, ?)");
+  const insert = db.prepare(
+    "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('settings', ?, ?)"
+  );
   const tx = db.transaction(() => {
     for (const [key, value] of Object.entries(updates)) {
       insert.run(key, JSON.stringify(value));
@@ -79,7 +81,7 @@ export async function getPricingForModel(provider, model) {
   const pricing = await getPricing();
   if (pricing[provider]?.[model]) return pricing[provider][model];
 
-  const { PROVIDER_ID_TO_ALIAS } = await import("open-sse/config/providerModels.js");
+  const { PROVIDER_ID_TO_ALIAS } = await import("@9router/open-sse/config/providerModels.js");
   const alias = PROVIDER_ID_TO_ALIAS[provider];
   if (alias && pricing[alias]) return pricing[alias][model] || null;
 
@@ -91,7 +93,9 @@ export async function getPricingForModel(provider, model) {
 
 export async function updatePricing(pricingData) {
   const db = getDbInstance();
-  const insert = db.prepare("INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('pricing', ?, ?)");
+  const insert = db.prepare(
+    "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('pricing', ?, ?)"
+  );
 
   const rows = db.prepare("SELECT key, value FROM key_value WHERE namespace = 'pricing'").all();
   const existing = {};
@@ -115,14 +119,19 @@ export async function resetPricing(provider, model) {
   const db = getDbInstance();
 
   if (model) {
-    const row = db.prepare("SELECT value FROM key_value WHERE namespace = 'pricing' AND key = ?").get(provider);
+    const row = db
+      .prepare("SELECT value FROM key_value WHERE namespace = 'pricing' AND key = ?")
+      .get(provider);
     if (row) {
       const models = JSON.parse(row.value);
       delete models[model];
       if (Object.keys(models).length === 0) {
         db.prepare("DELETE FROM key_value WHERE namespace = 'pricing' AND key = ?").run(provider);
       } else {
-        db.prepare("UPDATE key_value SET value = ? WHERE namespace = 'pricing' AND key = ?").run(JSON.stringify(models), provider);
+        db.prepare("UPDATE key_value SET value = ? WHERE namespace = 'pricing' AND key = ?").run(
+          JSON.stringify(models),
+          provider
+        );
       }
     }
   } else {
@@ -163,7 +172,13 @@ function migrateProxyEntry(value) {
     };
   } catch {
     const parts = value.split(":");
-    return { type: "http", host: parts[0] || value, port: parts[1] || "8080", username: "", password: "" };
+    return {
+      type: "http",
+      host: parts[0] || value,
+      port: parts[1] || "8080",
+      username: "",
+      password: "",
+    };
   }
 }
 
@@ -181,12 +196,17 @@ export async function getProxyConfig() {
   }
   if (raw.providers) {
     for (const [k, v] of Object.entries(raw.providers)) {
-      if (typeof v === "string") { raw.providers[k] = migrateProxyEntry(v); migrated = true; }
+      if (typeof v === "string") {
+        raw.providers[k] = migrateProxyEntry(v);
+        migrated = true;
+      }
     }
   }
 
   if (migrated) {
-    const insert = db.prepare("INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('proxyConfig', ?, ?)");
+    const insert = db.prepare(
+      "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('proxyConfig', ?, ?)"
+    );
     if (raw.global !== undefined) insert.run("global", JSON.stringify(raw.global));
     if (raw.providers) insert.run("providers", JSON.stringify(raw.providers));
   }
@@ -207,12 +227,20 @@ export async function setProxyForLevel(level, id, proxy) {
 
   if (level === "global") {
     config.global = proxy || null;
-    db.prepare("INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('proxyConfig', 'global', ?)").run(JSON.stringify(config.global));
+    db.prepare(
+      "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('proxyConfig', 'global', ?)"
+    ).run(JSON.stringify(config.global));
   } else {
     const mapKey = level + "s";
     if (!config[mapKey]) config[mapKey] = {};
-    if (proxy) { config[mapKey][id] = proxy; } else { delete config[mapKey][id]; }
-    db.prepare("INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('proxyConfig', ?, ?)").run(mapKey, JSON.stringify(config[mapKey]));
+    if (proxy) {
+      config[mapKey][id] = proxy;
+    } else {
+      delete config[mapKey][id];
+    }
+    db.prepare(
+      "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('proxyConfig', ?, ?)"
+    ).run(mapKey, JSON.stringify(config[mapKey]));
   }
 
   backupDbFile("pre-write");
@@ -231,7 +259,9 @@ export async function resolveProxyForConnection(connectionId) {
   }
 
   const db = getDbInstance();
-  const connection = db.prepare("SELECT provider FROM provider_connections WHERE id = ?").get(connectionId);
+  const connection = db
+    .prepare("SELECT provider FROM provider_connections WHERE id = ?")
+    .get(connectionId);
 
   if (connection) {
     if (config.combos && Object.keys(config.combos).length > 0) {
@@ -239,7 +269,7 @@ export async function resolveProxyForConnection(connectionId) {
       for (const comboRow of combos) {
         if (config.combos[comboRow.id]) {
           const combo = JSON.parse(comboRow.data);
-          const usesProvider = (combo.models || []).some(m => m.provider === connection.provider);
+          const usesProvider = (combo.models || []).some((m) => m.provider === connection.provider);
           if (usesProvider) {
             return { proxy: config.combos[comboRow.id], level: "combo", levelId: comboRow.id };
           }
@@ -248,7 +278,11 @@ export async function resolveProxyForConnection(connectionId) {
     }
 
     if (config.providers?.[connection.provider]) {
-      return { proxy: config.providers[connection.provider], level: "provider", levelId: connection.provider };
+      return {
+        proxy: config.providers[connection.provider],
+        level: "provider",
+        levelId: connection.provider,
+      };
     }
   }
 
@@ -266,7 +300,9 @@ export async function setProxyConfig(config) {
 
   const db = getDbInstance();
   const current = await getProxyConfig();
-  const insert = db.prepare("INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('proxyConfig', ?, ?)");
+  const insert = db.prepare(
+    "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES ('proxyConfig', ?, ?)"
+  );
 
   const tx = db.transaction(() => {
     if (config.global !== undefined) {

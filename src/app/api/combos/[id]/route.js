@@ -9,7 +9,7 @@ import {
 } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/lib/cloudSync";
-import { validateComboDAG } from "open-sse/services/combo.js";
+import { validateComboDAG } from "@9router/open-sse/services/combo.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_/.-]+$/;

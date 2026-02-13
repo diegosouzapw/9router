@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { getAllComboMetrics, getComboMetrics, resetComboMetrics, resetAllComboMetrics } from "open-sse/services/comboMetrics.js";
+import {
+  getAllComboMetrics,
+  getComboMetrics,
+  resetComboMetrics,
+  resetAllComboMetrics,
+} from "@9router/open-sse/services/comboMetrics.js";
 
 // GET /api/combos/metrics - Get per-combo metrics
 export async function GET(request) {

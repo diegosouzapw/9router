@@ -6,17 +6,20 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getModelInfo, getCombo } from "../services/model.js";
-import { parseModel } from "open-sse/services/model.js";
-import { detectFormat, getTargetFormat } from "open-sse/services/provider.js";
-import { handleChatCore } from "open-sse/handlers/chatCore.js";
-import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
-import { handleComboChat } from "open-sse/services/combo.js";
-import { HTTP_STATUS } from "open-sse/config/constants.js";
-import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
+import { parseModel } from "@9router/open-sse/services/model.js";
+import { detectFormat, getTargetFormat } from "@9router/open-sse/services/provider.js";
+import { handleChatCore } from "@9router/open-sse/handlers/chatCore.js";
+import { errorResponse, unavailableResponse } from "@9router/open-sse/utils/error.js";
+import { handleComboChat } from "@9router/open-sse/services/combo.js";
+import { HTTP_STATUS } from "@9router/open-sse/config/constants.js";
+import {
+  getModelTargetFormat,
+  PROVIDER_ID_TO_ALIAS,
+} from "@9router/open-sse/config/providerModels.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
-import { getSettings, getCombos, getApiKeyMetadata } from "../../lib/localDb.js";
-import { resolveProxyForConnection } from "../../lib/localDb.js";
+import { getSettings, getCombos, getApiKeyMetadata } from "@/lib/localDb.js";
+import { resolveProxyForConnection } from "@/lib/localDb.js";
 import { logProxyEvent } from "../../lib/proxyLogger.js";
 import { logTranslationEvent } from "../../lib/translatorEvents.js";
 
@@ -33,26 +36,29 @@ export async function handleChat(request, clientRawRequest = null) {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
-  
+
   // Build clientRawRequest for logging (if not provided)
   if (!clientRawRequest) {
     const url = new URL(request.url);
     clientRawRequest = {
       endpoint: url.pathname,
       body,
-      headers: Object.fromEntries(request.headers.entries())
+      headers: Object.fromEntries(request.headers.entries()),
     };
   }
 
   // Log request endpoint and model
   const url = new URL(request.url);
   const modelStr = body.model;
-  
+
   // Count messages (support both messages[] and input[] formats)
   const msgCount = body.messages?.length || body.input?.length || 0;
   const toolCount = body.tools?.length || 0;
   const effort = body.reasoning_effort || body.reasoning?.effort || null;
-  log.request("POST", `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}${effort ? ` | effort=${effort}` : ""}`);
+  log.request(
+    "POST",
+    `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}${effort ? ` | effort=${effort}` : ""}`
+  );
 
   // Log API key (masked)
   const authHeader = request.headers.get("Authorization");
@@ -92,7 +98,10 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const combo = await getCombo(modelStr);
   if (combo) {
-    log.info("CHAT", `Combo "${modelStr}" [${combo.strategy || "priority"}] with ${combo.models.length} models`);
+    log.info(
+      "CHAT",
+      `Combo "${modelStr}" [${combo.strategy || "priority"}] with ${combo.models.length} models`
+    );
 
     // Pre-check function: skip models where all accounts are in cooldown
     const isModelAvailable = async (modelString) => {
@@ -113,7 +122,8 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       combo,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, combo.name, apiKeyInfo),
+      handleSingleModel: (b, m) =>
+        handleSingleModelChat(b, m, clientRawRequest, request, combo.name, apiKeyInfo),
       isModelAvailable,
       log,
       settings,
@@ -128,15 +138,23 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, comboName = null, apiKeyInfo = null) {
+async function handleSingleModelChat(
+  body,
+  modelStr,
+  clientRawRequest = null,
+  request = null,
+  comboName = null,
+  apiKeyInfo = null
+) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) {
     if (modelInfo.errorType === "ambiguous_model") {
-      const message = modelInfo.errorMessage
-        || `Ambiguous model '${modelStr}'. Use provider/model prefix (ex: gh/${modelStr} or cc/${modelStr}).`;
+      const message =
+        modelInfo.errorMessage ||
+        `Ambiguous model '${modelStr}'. Use provider/model prefix (ex: gh/${modelStr} or cc/${modelStr}).`;
       log.warn("CHAT", message, {
         model: modelStr,
-        candidates: modelInfo.candidateAliases || modelInfo.candidateProviders || []
+        candidates: modelInfo.candidateAliases || modelInfo.candidateProviders || [],
       });
       return errorResponse(HTTP_STATUS.BAD_REQUEST, message);
     }
@@ -172,16 +190,25 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const status =
+          lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return unavailableResponse(
+          status,
+          `[${provider}/${model}] ${errorMsg}`,
+          credentials.retryAfter,
+          credentials.retryAfterHuman
+        );
       }
       if (!excludeConnectionId) {
         log.error("AUTH", `No credentials for provider: ${provider}`);
         return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return errorResponse(
+        lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
+        lastError || "All accounts unavailable"
+      );
     }
 
     // Log account selection
@@ -199,7 +226,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     const proxyStartTime = Date.now();
-    
+
     // Use shared chatCore
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
@@ -216,12 +243,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           accessToken: newCreds.accessToken,
           refreshToken: newCreds.refreshToken,
           providerSpecificData: newCreds.providerSpecificData,
-          testStatus: "active"
+          testStatus: "active",
         });
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials);
-      }
+      },
     });
 
     const proxyLatency = Date.now() - proxyStartTime;
@@ -230,14 +257,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     try {
       const proxyData = proxyInfo?.proxy || null;
       logProxyEvent({
-        status: result.success ? "success" : (result.status === 408 || result.status === 504 ? "timeout" : "error"),
+        status: result.success
+          ? "success"
+          : result.status === 408 || result.status === 504
+            ? "timeout"
+            : "error",
         proxy: proxyData,
         level: proxyInfo?.level || "direct",
         levelId: proxyInfo?.levelId || null,
         provider,
         targetUrl: `${provider}/${model}`,
         latencyMs: proxyLatency,
-        error: result.success ? null : (result.error || null),
+        error: result.success ? null : result.error || null,
         connectionId: credentials.connectionId,
         comboId: comboName || null,
         account: credentials.connectionId?.slice(0, 8) || null,
@@ -254,7 +285,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         sourceFormat,
         targetFormat,
         status: result.success ? "success" : "error",
-        statusCode: result.success ? 200 : (result.status || 500),
+        statusCode: result.success ? 200 : result.status || 500,
         latency: proxyLatency,
         endpoint: clientRawRequest?.endpoint || "/v1/chat/completions",
         connectionId: credentials.connectionId || null,
@@ -263,12 +294,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     } catch {
       // Never let logging break the request pipeline
     }
-    
+
     if (result.success) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider);
-    
+    const { shouldFallback } = await markAccountUnavailable(
+      credentials.connectionId,
+      result.status,
+      result.error,
+      provider
+    );
+
     if (shouldFallback) {
       log.warn("AUTH", `Account ${accountId}... unavailable (${result.status}), trying fallback`);
       excludeConnectionId = credentials.connectionId;

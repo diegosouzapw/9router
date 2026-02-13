@@ -12,12 +12,22 @@ const footerLinks = {
   resources: [
     { label: "Documentation", href: "/docs" },
     { label: "API Reference", href: "/docs#api-reference" },
-    { label: "Help Center", href: "https://github.com/decolua/9router/discussions", external: true },
+    {
+      label: "Help Center",
+      href: "https://github.com/decolua/9router/discussions",
+      external: true,
+    },
   ],
   company: [
     { label: "About", href: "https://github.com/decolua/9router", external: true },
     { label: "Blog", href: "https://github.com/decolua/9router/releases", external: true },
-    { label: "Contact", href: "https://github.com/decolua/9router/issues/new/choose", external: true },
+    {
+      label: "Contact",
+      href: "https://github.com/decolua/9router/issues/new/choose",
+      external: true,
+    },
+    { label: "Terms", href: "/terms" },
+    { label: "Privacy", href: "/privacy" },
   ],
 };
 
@@ -25,7 +35,12 @@ export default function Footer() {
   const renderFooterLink = (link) => {
     if (link.external) {
       return (
-        <a href={link.href} target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">
+        <a
+          href={link.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-primary transition-colors"
+        >
           {link.label}
         </a>
       );
@@ -53,9 +68,7 @@ export default function Footer() {
                   />
                 </svg>
               </div>
-              <span className="text-xl font-bold text-text-main">
-                {APP_CONFIG.name}
-              </span>
+              <span className="text-xl font-bold text-text-main">{APP_CONFIG.name}</span>
             </div>
             <p className="text-text-muted mb-6 max-w-sm font-light">
               The unified interface for modern AI infrastructure. Secure, observable, and scalable.
@@ -92,9 +105,7 @@ export default function Footer() {
             <h4 className="font-semibold text-text-main mb-4">Product</h4>
             <ul className="flex flex-col gap-3 text-sm text-text-muted font-light">
               {footerLinks.product.map((link) => (
-                <li key={link.label}>
-                  {renderFooterLink(link)}
-                </li>
+                <li key={link.label}>{renderFooterLink(link)}</li>
               ))}
             </ul>
           </div>
@@ -104,9 +115,7 @@ export default function Footer() {
             <h4 className="font-semibold text-text-main mb-4">Resources</h4>
             <ul className="flex flex-col gap-3 text-sm text-text-muted font-light">
               {footerLinks.resources.map((link) => (
-                <li key={link.label}>
-                  {renderFooterLink(link)}
-                </li>
+                <li key={link.label}>{renderFooterLink(link)}</li>
               ))}
             </ul>
           </div>
@@ -116,9 +125,7 @@ export default function Footer() {
             <h4 className="font-semibold text-text-main mb-4">Company</h4>
             <ul className="flex flex-col gap-3 text-sm text-text-muted font-light">
               {footerLinks.company.map((link) => (
-                <li key={link.label}>
-                  {renderFooterLink(link)}
-                </li>
+                <li key={link.label}>{renderFooterLink(link)}</li>
               ))}
             </ul>
           </div>
@@ -133,7 +140,18 @@ export default function Footer() {
             <a href="/docs" className="hover:text-primary transition-colors">
               Documentation
             </a>
-            <a href="https://github.com/decolua/9router/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">
+            <Link href="/terms" className="hover:text-primary transition-colors">
+              Terms
+            </Link>
+            <Link href="/privacy" className="hover:text-primary transition-colors">
+              Privacy
+            </Link>
+            <a
+              href="https://github.com/decolua/9router/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-primary transition-colors"
+            >
               License
             </a>
           </div>

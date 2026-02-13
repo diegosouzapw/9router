@@ -11,7 +11,7 @@
  */
 
 import { getProviderConnections, updateProviderConnection } from "@/lib/localDb";
-import { getAccessToken, supportsTokenRefresh } from "open-sse/services/tokenRefresh.js";
+import { getAccessToken, supportsTokenRefresh } from "@9router/open-sse/services/tokenRefresh.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const TICK_MS = 60 * 1000; // sweep interval: every 60 seconds
@@ -29,7 +29,9 @@ export function initTokenHealthCheck() {
   if (initialized) return;
   initialized = true;
 
-  console.log(`${LOG_PREFIX} Starting proactive token health-check (tick every ${TICK_MS / 1000}s)`);
+  console.log(
+    `${LOG_PREFIX} Starting proactive token health-check (tick every ${TICK_MS / 1000}s)`
+  );
 
   // Run first sweep after a short delay so the server finishes booting
   setTimeout(() => {
@@ -81,7 +83,9 @@ async function checkConnection(conn) {
   if (!supportsTokenRefresh(conn.provider)) {
     const now = new Date().toISOString();
     await updateProviderConnection(conn.id, { lastHealthCheckAt: now });
-    console.log(`${LOG_PREFIX} Skipping ${conn.provider}/${conn.name || conn.email || conn.id} (refresh unsupported)`);
+    console.log(
+      `${LOG_PREFIX} Skipping ${conn.provider}/${conn.name || conn.email || conn.id} (refresh unsupported)`
+    );
     return;
   }
 
@@ -91,7 +95,9 @@ async function checkConnection(conn) {
   // Not yet due
   if (Date.now() - lastCheck < intervalMs) return;
 
-  console.log(`${LOG_PREFIX} Refreshing ${conn.provider}/${conn.name || conn.email || conn.id} (interval: ${intervalMin}min)`);
+  console.log(
+    `${LOG_PREFIX} Refreshing ${conn.provider}/${conn.name || conn.email || conn.id} (interval: ${intervalMin}min)`
+  );
 
   const credentials = {
     refreshToken: conn.refreshToken,
@@ -142,7 +148,9 @@ async function checkConnection(conn) {
       lastErrorSource: "oauth",
       errorCode: "refresh_failed",
     });
-    console.warn(`${LOG_PREFIX} ✗ ${conn.provider}/${conn.name || conn.email || conn.id} refresh failed`);
+    console.warn(
+      `${LOG_PREFIX} ✗ ${conn.provider}/${conn.name || conn.email || conn.id} refresh failed`
+    );
   }
 }
 

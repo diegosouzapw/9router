@@ -7,11 +7,11 @@ export {
   findModelName,
   getModelTargetFormat,
   PROVIDER_ID_TO_ALIAS,
-  getModelsByProviderId
-} from "open-sse/config/providerModels.js";
+  getModelsByProviderId,
+} from "@9router/open-sse/config/providerModels.js";
 
 import { AI_PROVIDERS, isOpenAICompatibleProvider } from "./providers.js";
-import { PROVIDER_MODELS as MODELS } from "open-sse/config/providerModels.js";
+import { PROVIDER_MODELS as MODELS } from "@9router/open-sse/config/providerModels.js";
 
 // Providers that accept any model (passthrough)
 const PASSTHROUGH_PROVIDERS = new Set(
@@ -26,10 +26,10 @@ export function isValidModel(aliasOrId, modelId) {
   if (PASSTHROUGH_PROVIDERS.has(aliasOrId)) return true;
   const models = MODELS[aliasOrId];
   if (!models) return false;
-  return models.some(m => m.id === modelId);
+  return models.some((m) => m.id === modelId);
 }
 
 // Legacy AI_MODELS for backward compatibility
 export const AI_MODELS = Object.entries(MODELS).flatMap(([alias, models]) =>
-  models.map(m => ({ provider: alias, model: m.id, name: m.name }))
+  models.map((m) => ({ provider: alias, model: m.id, name: m.name }))
 );

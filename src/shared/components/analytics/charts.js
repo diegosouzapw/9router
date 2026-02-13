@@ -3,15 +3,63 @@
 import { useState, useMemo, useCallback } from "react";
 import Card from "../Card";
 import { getModelColor } from "@/shared/constants/colors";
-import { fmtCompact as fmt, fmtFull, fmtCost, formatApiKeyLabel as maskApiKeyLabel } from "@/shared/utils/formatting";
+import {
+  fmtCompact as fmt,
+  fmtFull,
+  fmtCost,
+  formatApiKeyLabel as maskApiKeyLabel,
+} from "@/shared/utils/formatting";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+  PieChart,
+  Pie,
+  Legend,
+} from "recharts";
+
+// ── Custom Tooltip for dark theme ──────────────────────────────────────────
+
+function DarkTooltip({ active, payload, label, formatter }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-lg border border-white/10 bg-surface px-3 py-2 text-xs shadow-lg">
+      {label && <div className="font-semibold text-text-main mb-1">{label}</div>}
+      {payload.map((entry, i) => (
+        <div key={i} className="flex items-center gap-1.5 text-text-muted">
+          <span
+            className="w-2 h-2 rounded-full shrink-0"
+            style={{ backgroundColor: entry.color }}
+          />
+          <span>{entry.name}:</span>
+          <span className="font-mono font-medium text-text-main">
+            {formatter ? formatter(entry.value) : entry.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ── Sort Indicator (shared by tables) ──────────────────────────────────────
 
 export function SortIndicator({ active, sortOrder }) {
   if (!active) {
-    return <span className="material-symbols-outlined text-[12px] opacity-0 group-hover:opacity-30">unfold_more</span>;
+    return (
+      <span className="material-symbols-outlined text-[12px] opacity-0 group-hover:opacity-30">
+        unfold_more
+      </span>
+    );
   }
-  return <span className="material-symbols-outlined text-[12px] text-primary">{sortOrder === "asc" ? "expand_less" : "expand_more"}</span>;
+  return (
+    <span className="material-symbols-outlined text-[12px] text-primary">
+      {sortOrder === "asc" ? "expand_less" : "expand_more"}
+    </span>
+  );
 }
 
 // ── StatCard ───────────────────────────────────────────────────────────────
@@ -71,11 +119,24 @@ export function ActivityHeatmap({ activityMap }) {
     const labels = [];
     let lastMonth = -1;
     weeks.forEach((week, weekIdx) => {
-      const firstDay = week.find(d => d !== null);
+      const firstDay = week.find((d) => d !== null);
       if (firstDay) {
         const m = new Date(firstDay.date).getMonth();
         if (m !== lastMonth) {
-          const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+          const monthNames = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+          ];
           labels.push({ weekIdx, label: monthNames[m] });
           lastMonth = m;
         }
@@ -98,7 +159,8 @@ export function ActivityHeatmap({ activityMap }) {
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">Activity</h3>
         <span className="text-xs text-text-muted">
-          {Object.keys(activityMap || {}).length} active days · {fmt(Object.values(activityMap || {}).reduce((a, b) => a + b, 0))} tokens · 365 days
+          {Object.keys(activityMap || {}).length} active days ·{" "}
+          {fmt(Object.values(activityMap || {}).reduce((a, b) => a + b, 0))} tokens · 365 days
         </span>
       </div>
 
@@ -107,7 +169,11 @@ export function ActivityHeatmap({ activityMap }) {
           <span
             key={i}
             className="text-text-muted"
-            style={{ position: "relative", left: `${m.weekIdx * 13}px`, marginLeft: i === 0 ? 0 : "-20px" }}
+            style={{
+              position: "relative",
+              left: `${m.weekIdx * 13}px`,
+              marginLeft: i === 0 ? 0 : "-20px",
+            }}
           >
             {m.label}
           </span>
@@ -151,17 +217,23 @@ export function ActivityHeatmap({ activityMap }) {
   );
 }
 
-// ── DailyTrendChart ────────────────────────────────────────────────────────
+// ── DailyTrendChart (Recharts) ─────────────────────────────────────────────
 
 export function DailyTrendChart({ dailyTrend }) {
-  const maxTokens = useMemo(() => {
-    return Math.max(...(dailyTrend || []).map(d => d.promptTokens + d.completionTokens), 1);
+  const chartData = useMemo(() => {
+    return (dailyTrend || []).map((d) => ({
+      date: d.date.slice(5),
+      Input: d.promptTokens,
+      Output: d.completionTokens,
+    }));
   }, [dailyTrend]);
 
-  if (!dailyTrend || dailyTrend.length === 0) {
+  if (!chartData.length) {
     return (
       <Card className="p-4">
-        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">Token Trend</h3>
+        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">
+          Token Trend
+        </h3>
         <div className="text-center text-text-muted text-sm py-8">No data</div>
       </Card>
     );
@@ -169,67 +241,72 @@ export function DailyTrendChart({ dailyTrend }) {
 
   return (
     <Card className="p-4 flex-1">
-      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">Token Trend</h3>
-      <div className="flex items-end gap-1 h-32">
-        {dailyTrend.map((d, i) => {
-          const total = d.promptTokens + d.completionTokens;
-          const pct = (total / maxTokens) * 100;
-          const inputPct = total > 0 ? (d.promptTokens / total) * 100 : 0;
-          return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
-              <div className="w-full flex flex-col justify-end h-32 rounded-t overflow-hidden">
-                <div
-                  className="w-full rounded-t-sm relative overflow-hidden transition-all"
-                  style={{ height: `${Math.max(pct, 2)}%` }}
-                  title={`${d.date}: ${fmt(total)} tokens`}
-                >
-                  <div className="absolute inset-0 bg-primary/70" style={{ height: `${inputPct}%` }} />
-                  <div className="absolute bottom-0 inset-x-0 bg-emerald-500/70" style={{ height: `${100 - inputPct}%` }} />
-                </div>
-              </div>
-              {(i === 0 || i === dailyTrend.length - 1 || i % Math.max(Math.floor(dailyTrend.length / 6), 1) === 0) && (
-                <span className="text-[9px] text-text-muted whitespace-nowrap">
-                  {d.date.slice(5)}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">
+        Token Trend
+      </h3>
+      <ResponsiveContainer width="100%" height={128}>
+        <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 9, fill: "var(--text-muted)" }}
+            axisLine={false}
+            tickLine={false}
+            interval={Math.max(Math.floor(chartData.length / 6), 0)}
+          />
+          <Tooltip
+            content={<DarkTooltip formatter={fmt} />}
+            cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          />
+          <Bar
+            dataKey="Input"
+            stackId="a"
+            fill="var(--primary)"
+            opacity={0.7}
+            radius={[0, 0, 0, 0]}
+            animationDuration={600}
+          />
+          <Bar
+            dataKey="Output"
+            stackId="a"
+            fill="#10b981"
+            opacity={0.7}
+            radius={[3, 3, 0, 0]}
+            animationDuration={600}
+          />
+        </BarChart>
+      </ResponsiveContainer>
       <div className="flex items-center gap-4 mt-2 text-[10px] text-text-muted">
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary/70" /> Input</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500/70" /> Output</span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-primary/70" /> Input
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-emerald-500/70" /> Output
+        </span>
       </div>
     </Card>
   );
 }
 
-// ── AccountDonut ───────────────────────────────────────────────────────────
+// ── AccountDonut (Recharts) ────────────────────────────────────────────────
 
 export function AccountDonut({ byAccount }) {
   const data = useMemo(() => byAccount || [], [byAccount]);
-  const total = useMemo(() => data.reduce((s, a) => s + a.totalTokens, 0), [data]);
   const hasData = data.length > 0;
 
-  const segments = useMemo(() => {
-    return data.slice(0, 8).reduce((acc, item, i) => {
-      const prevEnd = acc.length > 0 ? acc[acc.length - 1].endAngle : 0;
-      const pct = total > 0 ? item.totalTokens / total : 0;
-      const endAngle = prevEnd + pct * 360;
-      acc.push({ ...item, pct, startAngle: prevEnd, endAngle, color: getModelColor(i) });
-      return acc;
-    }, []);
-  }, [data, total]);
-
-  const conicGradient = useMemo(() => {
-    if (!segments.length) return "conic-gradient(rgba(255,255,255,0.06) 0deg 360deg)";
-    return `conic-gradient(${segments.map((seg) => `${seg.color} ${seg.startAngle}deg ${seg.endAngle}deg`).join(", ")})`;
-  }, [segments]);
+  const pieData = useMemo(() => {
+    return data.slice(0, 8).map((item, i) => ({
+      name: item.account,
+      value: item.totalTokens,
+      fill: getModelColor(i),
+    }));
+  }, [data]);
 
   if (!hasData) {
     return (
       <Card className="p-4 flex-1">
-        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">By Account</h3>
+        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">
+          By Account
+        </h3>
         <div className="text-center text-text-muted text-sm py-8">No data</div>
       </Card>
     );
@@ -237,22 +314,43 @@ export function AccountDonut({ byAccount }) {
 
   return (
     <Card className="p-4 flex-1">
-      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">By Account</h3>
-      <div className="flex items-center gap-6">
-        <div className="shrink-0 relative" style={{ width: 120, height: 120 }}>
-          <div className="w-full h-full rounded-full" style={{ background: conicGradient }} />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-14 h-14 rounded-full bg-surface" />
-          </div>
-        </div>
+      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">
+        By Account
+      </h3>
+      <div className="flex items-center gap-4">
+        <ResponsiveContainer width={120} height={120}>
+          <PieChart>
+            <Pie
+              data={pieData}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={28}
+              outerRadius={55}
+              paddingAngle={1}
+              animationDuration={600}
+            >
+              {pieData.map((entry, i) => (
+                <Cell key={i} fill={entry.fill} stroke="none" />
+              ))}
+            </Pie>
+            <Tooltip content={<DarkTooltip formatter={fmt} />} />
+          </PieChart>
+        </ResponsiveContainer>
         <div className="flex flex-col gap-1 min-w-0 flex-1">
-          {segments.map((seg, i) => (
+          {pieData.map((seg, i) => (
             <div key={i} className="flex items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-1.5 min-w-0">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: seg.color }} />
-                <span className="truncate text-text-main">{seg.account}</span>
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: seg.fill }}
+                />
+                <span className="truncate text-text-main">{seg.name}</span>
               </div>
-              <span className="font-mono font-medium text-text-muted shrink-0">{fmt(seg.totalTokens)}</span>
+              <span className="font-mono font-medium text-text-muted shrink-0">
+                {fmt(seg.value)}
+              </span>
             </div>
           ))}
         </div>
@@ -261,36 +359,27 @@ export function AccountDonut({ byAccount }) {
   );
 }
 
-// ── ApiKeyDonut ────────────────────────────────────────────────────────────
+// ── ApiKeyDonut (Recharts) ─────────────────────────────────────────────────
 
 export function ApiKeyDonut({ byApiKey }) {
   const data = useMemo(() => byApiKey || [], [byApiKey]);
-  const total = useMemo(() => data.reduce((s, a) => s + a.totalTokens, 0), [data]);
   const hasData = data.length > 0;
 
-  const segments = useMemo(() => {
-    return data.slice(0, 8).reduce((acc, item, i) => {
-      const prevEnd = acc.length > 0 ? acc[acc.length - 1].endAngle : 0;
-      const pct = total > 0 ? item.totalTokens / total : 0;
-      const endAngle = prevEnd + pct * 360;
-      acc.push({
-        ...item, pct, startAngle: prevEnd, endAngle,
-        color: getModelColor(i),
-        maskedLabel: maskApiKeyLabel(item.apiKeyName, item.apiKeyId),
-      });
-      return acc;
-    }, []);
-  }, [data, total]);
-
-  const conicGradient = useMemo(() => {
-    if (!segments.length) return "conic-gradient(rgba(255,255,255,0.06) 0deg 360deg)";
-    return `conic-gradient(${segments.map((seg) => `${seg.color} ${seg.startAngle}deg ${seg.endAngle}deg`).join(", ")})`;
-  }, [segments]);
+  const pieData = useMemo(() => {
+    return data.slice(0, 8).map((item, i) => ({
+      name: maskApiKeyLabel(item.apiKeyName, item.apiKeyId),
+      fullName: item.apiKeyName || item.apiKeyId || "unknown",
+      value: item.totalTokens,
+      fill: getModelColor(i),
+    }));
+  }, [data]);
 
   if (!hasData) {
     return (
       <Card className="p-4 flex-1">
-        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">By API Key</h3>
+        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">
+          By API Key
+        </h3>
         <div className="text-center text-text-muted text-sm py-8">No data</div>
       </Card>
     );
@@ -298,24 +387,48 @@ export function ApiKeyDonut({ byApiKey }) {
 
   return (
     <Card className="p-4 flex-1">
-      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">By API Key</h3>
-      <div className="flex items-center gap-6">
-        <div className="shrink-0 relative" style={{ width: 120, height: 120 }}>
-          <div className="w-full h-full rounded-full" style={{ background: conicGradient }} />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-14 h-14 rounded-full bg-surface" />
-          </div>
-        </div>
+      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">
+        By API Key
+      </h3>
+      <div className="flex items-center gap-4">
+        <ResponsiveContainer width={120} height={120}>
+          <PieChart>
+            <Pie
+              data={pieData}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={28}
+              outerRadius={55}
+              paddingAngle={1}
+              animationDuration={600}
+            >
+              {pieData.map((entry, i) => (
+                <Cell key={i} fill={entry.fill} stroke="none" />
+              ))}
+            </Pie>
+            <Tooltip content={<DarkTooltip formatter={fmt} />} />
+          </PieChart>
+        </ResponsiveContainer>
         <div className="flex flex-col gap-1 min-w-0 flex-1">
-          {segments.map((seg, i) => (
-            <div key={`${seg.apiKeyId || seg.apiKeyName || "key"}-${i}`} className="flex items-center justify-between gap-2 text-xs">
+          {pieData.map((seg, i) => (
+            <div
+              key={`${seg.fullName}-${i}`}
+              className="flex items-center justify-between gap-2 text-xs"
+            >
               <div className="flex items-center gap-1.5 min-w-0">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: seg.color }} />
-                <span className="truncate text-text-main" title={seg.apiKeyName || seg.apiKeyId || "unknown"}>
-                  {seg.maskedLabel}
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: seg.fill }}
+                />
+                <span className="truncate text-text-main" title={seg.fullName}>
+                  {seg.name}
                 </span>
               </div>
-              <span className="font-mono font-medium text-text-muted shrink-0">{fmt(seg.totalTokens)}</span>
+              <span className="font-mono font-medium text-text-muted shrink-0">
+                {fmt(seg.value)}
+              </span>
             </div>
           ))}
         </div>
@@ -336,9 +449,10 @@ export function ApiKeyTable({ byApiKey }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return data;
-    return data.filter((row) =>
-      (row.apiKeyName || "").toLowerCase().includes(q) ||
-      (row.apiKeyId || "").toLowerCase().includes(q)
+    return data.filter(
+      (row) =>
+        (row.apiKeyName || "").toLowerCase().includes(q) ||
+        (row.apiKeyId || "").toLowerCase().includes(q)
     );
   }, [data, query]);
 
@@ -355,21 +469,26 @@ export function ApiKeyTable({ byApiKey }) {
     return arr;
   }, [filtered, sortBy, sortOrder]);
 
-  const toggleSort = useCallback((field) => {
-    if (sortBy === field) {
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-      return;
-    }
-    setSortBy(field);
-    setSortOrder("desc");
-  }, [sortBy]);
+  const toggleSort = useCallback(
+    (field) => {
+      if (sortBy === field) {
+        setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+        return;
+      }
+      setSortBy(field);
+      setSortOrder("desc");
+    },
+    [sortBy]
+  );
 
   const hasData = data.length > 0;
 
   if (!hasData) {
     return (
       <Card className="p-4 flex-1">
-        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">API Key Breakdown</h3>
+        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">
+          API Key Breakdown
+        </h3>
         <div className="text-center text-text-muted text-sm py-8">No data</div>
       </Card>
     );
@@ -378,7 +497,9 @@ export function ApiKeyTable({ byApiKey }) {
   return (
     <Card className="overflow-hidden">
       <div className="p-4 border-b border-border flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">API Key Breakdown</h3>
+        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">
+          API Key Breakdown
+        </h3>
         <input
           type="text"
           value={query}
@@ -391,44 +512,79 @@ export function ApiKeyTable({ byApiKey }) {
         <table className="w-full text-sm">
           <thead className="text-xs text-text-muted uppercase bg-black/[0.02] dark:bg-white/[0.02]">
             <tr>
-              <th className="px-4 py-2.5 text-left cursor-pointer group" onClick={() => toggleSort("apiKeyName")}>
+              <th
+                className="px-4 py-2.5 text-left cursor-pointer group"
+                onClick={() => toggleSort("apiKeyName")}
+              >
                 API Key <SortIndicator active={sortBy === "apiKeyName"} sortOrder={sortOrder} />
               </th>
-              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("requests")}>
+              <th
+                className="px-4 py-2.5 text-right cursor-pointer group"
+                onClick={() => toggleSort("requests")}
+              >
                 Requests <SortIndicator active={sortBy === "requests"} sortOrder={sortOrder} />
               </th>
-              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("promptTokens")}>
+              <th
+                className="px-4 py-2.5 text-right cursor-pointer group"
+                onClick={() => toggleSort("promptTokens")}
+              >
                 Input <SortIndicator active={sortBy === "promptTokens"} sortOrder={sortOrder} />
               </th>
-              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("completionTokens")}>
-                Output <SortIndicator active={sortBy === "completionTokens"} sortOrder={sortOrder} />
+              <th
+                className="px-4 py-2.5 text-right cursor-pointer group"
+                onClick={() => toggleSort("completionTokens")}
+              >
+                Output{" "}
+                <SortIndicator active={sortBy === "completionTokens"} sortOrder={sortOrder} />
               </th>
-              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("totalTokens")}>
-                Total Tokens <SortIndicator active={sortBy === "totalTokens"} sortOrder={sortOrder} />
+              <th
+                className="px-4 py-2.5 text-right cursor-pointer group"
+                onClick={() => toggleSort("totalTokens")}
+              >
+                Total Tokens{" "}
+                <SortIndicator active={sortBy === "totalTokens"} sortOrder={sortOrder} />
               </th>
-              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("cost")}>
+              <th
+                className="px-4 py-2.5 text-right cursor-pointer group"
+                onClick={() => toggleSort("cost")}
+              >
                 Cost <SortIndicator active={sortBy === "cost"} sortOrder={sortOrder} />
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {sorted.map((row, i) => (
-              <tr key={`${row.apiKeyId || row.apiKeyName || "key"}-${i}`} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+              <tr
+                key={`${row.apiKeyId || row.apiKeyName || "key"}-${i}`}
+                className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+              >
                 <td className="px-4 py-2.5">
                   <span className="font-medium" title={row.apiKeyName || row.apiKeyId || "unknown"}>
                     {maskApiKeyLabel(row.apiKeyName, row.apiKeyId)}
                   </span>
                 </td>
-                <td className="px-4 py-2.5 text-right font-mono text-text-muted">{fmtFull(row.requests)}</td>
-                <td className="px-4 py-2.5 text-right font-mono text-primary">{fmt(row.promptTokens)}</td>
-                <td className="px-4 py-2.5 text-right font-mono text-emerald-500">{fmt(row.completionTokens)}</td>
-                <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmt(row.totalTokens)}</td>
-                <td className="px-4 py-2.5 text-right font-mono text-amber-500">{fmtCost(row.cost)}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-text-muted">
+                  {fmtFull(row.requests)}
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono text-primary">
+                  {fmt(row.promptTokens)}
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono text-emerald-500">
+                  {fmt(row.completionTokens)}
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono font-semibold">
+                  {fmt(row.totalTokens)}
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono text-amber-500">
+                  {fmtCost(row.cost)}
+                </td>
               </tr>
             ))}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-text-muted">No API key matches this filter.</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-text-muted">
+                  No API key matches this filter.
+                </td>
               </tr>
             )}
           </tbody>
@@ -438,29 +594,42 @@ export function ApiKeyTable({ byApiKey }) {
   );
 }
 
-// ── WeeklyPattern ──────────────────────────────────────────────────────────
+// ── WeeklyPattern (Recharts) ───────────────────────────────────────────────
 
 export function WeeklyPattern({ weeklyPattern }) {
-  const maxTokens = useMemo(() => Math.max(...(weeklyPattern || []).map(w => w.totalTokens), 1), [weeklyPattern]);
+  const chartData = useMemo(() => {
+    return (weeklyPattern || []).map((w) => ({
+      day: w.day.slice(0, 3),
+      Tokens: w.totalTokens,
+    }));
+  }, [weeklyPattern]);
 
   return (
     <Card className="px-4 py-3">
-      <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Weekly</h3>
-      <div className="flex items-end gap-2 h-12">
-        {(weeklyPattern || []).map((w, i) => {
-          const pct = (w.totalTokens / maxTokens) * 100;
-          return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <div
-                className="w-full rounded-t-sm bg-text-muted/20 transition-all"
-                style={{ height: `${Math.max(pct, 4)}%` }}
-                title={`${w.day}: ${fmt(w.totalTokens)} tokens`}
-              />
-              <span className="text-[9px] text-text-muted">{w.day.slice(0, 3)}</span>
-            </div>
-          );
-        })}
-      </div>
+      <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+        Weekly
+      </h3>
+      <ResponsiveContainer width="100%" height={48}>
+        <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+          <XAxis
+            dataKey="day"
+            tick={{ fontSize: 9, fill: "var(--text-muted)" }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <Tooltip
+            content={<DarkTooltip formatter={fmt} />}
+            cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          />
+          <Bar
+            dataKey="Tokens"
+            fill="var(--text-muted)"
+            opacity={0.3}
+            radius={[3, 3, 0, 0]}
+            animationDuration={400}
+          />
+        </BarChart>
+      </ResponsiveContainer>
     </Card>
   );
 }
@@ -488,7 +657,20 @@ export function MostActiveDay7d({ activityMap }) {
 
     const peakDate = new Date(peakKey + "T12:00:00");
     const weekdays = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
-    const months = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+    const months = [
+      "jan",
+      "fev",
+      "mar",
+      "abr",
+      "mai",
+      "jun",
+      "jul",
+      "ago",
+      "set",
+      "out",
+      "nov",
+      "dez",
+    ];
     return {
       weekday: weekdays[peakDate.getDay()],
       label: `${peakDate.getDate()} de ${months[peakDate.getMonth()]}`,
@@ -498,16 +680,25 @@ export function MostActiveDay7d({ activityMap }) {
 
   return (
     <Card className="p-4 flex flex-col justify-center" style={{ flex: 1, minHeight: 0 }}>
-      <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-muted)" }}>Most Active Day</h3>
+      <h3
+        className="text-xs font-semibold uppercase tracking-wider mb-2"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Most Active Day
+      </h3>
       {data ? (
         <>
-          <span className="text-xl font-bold capitalize" style={{ lineHeight: 1.2 }}>{data.weekday}</span>
+          <span className="text-xl font-bold capitalize" style={{ lineHeight: 1.2 }}>
+            {data.weekday}
+          </span>
           <span className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
             {data.label} · {fmt(data.tokens)} tokens
           </span>
         </>
       ) : (
-        <span className="text-xs" style={{ color: "var(--text-muted)" }}>Sem dados nos últimos 7 dias</span>
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+          Sem dados nos últimos 7 dias
+        </span>
       )}
     </Card>
   );
@@ -531,7 +722,7 @@ export function WeeklySquares7d({ activityMap }) {
       const shortDays = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
       result.push({ key, val, label: shortDays[d.getDay()] });
     }
-    return result.map(d => ({ ...d, intensity: maxVal > 0 ? d.val / maxVal : 0 }));
+    return result.map((d) => ({ ...d, intensity: maxVal > 0 ? d.val / maxVal : 0 }));
   }, [activityMap]);
 
   function getSquareStyle(intensity) {
@@ -542,10 +733,18 @@ export function WeeklySquares7d({ activityMap }) {
 
   return (
     <Card className="p-4 flex flex-col justify-center" style={{ flex: 1, minHeight: 0 }}>
-      <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>Weekly</h3>
+      <h3
+        className="text-xs font-semibold uppercase tracking-wider mb-3"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Weekly
+      </h3>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 6, justifyContent: "center" }}>
         {days.map((d, i) => (
-          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <div
+            key={i}
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
+          >
             <div
               title={`${d.key}: ${fmtFull(d.val)} tokens`}
               style={{
@@ -557,7 +756,16 @@ export function WeeklySquares7d({ activityMap }) {
                 cursor: "default",
               }}
             />
-            <span style={{ fontSize: 9, fontWeight: 600, color: "var(--text-muted)", letterSpacing: "0.03em" }}>{d.label}</span>
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                letterSpacing: "0.03em",
+              }}
+            >
+              {d.label}
+            </span>
           </div>
         ))}
       </div>
@@ -571,21 +779,25 @@ export function ModelTable({ byModel, summary }) {
   const [sortBy, setSortBy] = useState("totalTokens");
   const [sortOrder, setSortOrder] = useState("desc");
 
-  const toggleSort = useCallback((field) => {
-    if (sortBy === field) {
-      setSortOrder(prev => prev === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(field);
-      setSortOrder("desc");
-    }
-  }, [sortBy]);
+  const toggleSort = useCallback(
+    (field) => {
+      if (sortBy === field) {
+        setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+      } else {
+        setSortBy(field);
+        setSortOrder("desc");
+      }
+    },
+    [sortBy]
+  );
 
   const sorted = useMemo(() => {
     const arr = [...(byModel || [])];
     arr.sort((a, b) => {
       const va = a[sortBy] ?? 0;
       const vb = b[sortBy] ?? 0;
-      if (typeof va === "string") return sortOrder === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+      if (typeof va === "string")
+        return sortOrder === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
       return sortOrder === "asc" ? va - vb : vb - va;
     });
     return arr;
@@ -594,25 +806,43 @@ export function ModelTable({ byModel, summary }) {
   return (
     <Card className="overflow-hidden">
       <div className="p-4 border-b border-border">
-        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">Model Breakdown</h3>
+        <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">
+          Model Breakdown
+        </h3>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-xs text-text-muted uppercase bg-black/[0.02] dark:bg-white/[0.02]">
             <tr>
-              <th className="px-4 py-2.5 text-left cursor-pointer group" onClick={() => toggleSort("model")}>
+              <th
+                className="px-4 py-2.5 text-left cursor-pointer group"
+                onClick={() => toggleSort("model")}
+              >
                 Model <SortIndicator active={sortBy === "model"} sortOrder={sortOrder} />
               </th>
-              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("requests")}>
+              <th
+                className="px-4 py-2.5 text-right cursor-pointer group"
+                onClick={() => toggleSort("requests")}
+              >
                 Requests <SortIndicator active={sortBy === "requests"} sortOrder={sortOrder} />
               </th>
-              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("promptTokens")}>
+              <th
+                className="px-4 py-2.5 text-right cursor-pointer group"
+                onClick={() => toggleSort("promptTokens")}
+              >
                 Input <SortIndicator active={sortBy === "promptTokens"} sortOrder={sortOrder} />
               </th>
-              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("completionTokens")}>
-                Output <SortIndicator active={sortBy === "completionTokens"} sortOrder={sortOrder} />
+              <th
+                className="px-4 py-2.5 text-right cursor-pointer group"
+                onClick={() => toggleSort("completionTokens")}
+              >
+                Output{" "}
+                <SortIndicator active={sortBy === "completionTokens"} sortOrder={sortOrder} />
               </th>
-              <th className="px-4 py-2.5 text-right cursor-pointer group" onClick={() => toggleSort("totalTokens")}>
+              <th
+                className="px-4 py-2.5 text-right cursor-pointer group"
+                onClick={() => toggleSort("totalTokens")}
+              >
                 Total <SortIndicator active={sortBy === "totalTokens"} sortOrder={sortOrder} />
               </th>
               <th className="px-4 py-2.5 text-right w-36">Share</th>
@@ -620,17 +850,31 @@ export function ModelTable({ byModel, summary }) {
           </thead>
           <tbody className="divide-y divide-border">
             {sorted.map((m, i) => (
-              <tr key={m.model} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+              <tr
+                key={m.model}
+                className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+              >
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: getModelColor(i) }} />
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: getModelColor(i) }}
+                    />
                     <span className="font-medium">{m.model}</span>
                   </div>
                 </td>
-                <td className="px-4 py-2.5 text-right font-mono text-text-muted">{fmtFull(m.requests)}</td>
-                <td className="px-4 py-2.5 text-right font-mono text-primary">{fmt(m.promptTokens)}</td>
-                <td className="px-4 py-2.5 text-right font-mono text-emerald-500">{fmt(m.completionTokens)}</td>
-                <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmt(m.totalTokens)}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-text-muted">
+                  {fmtFull(m.requests)}
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono text-primary">
+                  {fmt(m.promptTokens)}
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono text-emerald-500">
+                  {fmt(m.completionTokens)}
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono font-semibold">
+                  {fmt(m.totalTokens)}
+                </td>
                 <td className="px-4 py-2.5 text-right">
                   <div className="flex items-center gap-2 justify-end">
                     <div className="w-16 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
@@ -639,7 +883,9 @@ export function ModelTable({ byModel, summary }) {
                         style={{ width: `${m.pct}%`, backgroundColor: getModelColor(i) }}
                       />
                     </div>
-                    <span className="text-xs font-mono text-text-muted w-10 text-right">{m.pct}%</span>
+                    <span className="text-xs font-mono text-text-muted w-10 text-right">
+                      {m.pct}%
+                    </span>
                   </div>
                 </td>
               </tr>
@@ -662,7 +908,9 @@ export function UsageDetail({ summary }) {
 
   return (
     <Card className="p-4 flex-1">
-      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">Usage Detail</h3>
+      <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider mb-3">
+        Usage Detail
+      </h3>
       <div className="flex flex-col gap-2">
         {items.map((item, i) => (
           <div key={i} className="flex items-center justify-between">
