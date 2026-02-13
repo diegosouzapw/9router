@@ -4,6 +4,7 @@
 
 import { getDbInstance } from "./core.js";
 import { backupDbFile } from "./backup.js";
+import { PROVIDER_ID_TO_ALIAS } from "@9router/open-sse/config/providerModels.js";
 
 // ──────────────── Settings ────────────────
 
@@ -155,6 +156,38 @@ export async function resetAllPricing() {
 // ──────────────── Proxy Config ────────────────
 
 const DEFAULT_PROXY_CONFIG = { global: null, providers: {}, combos: {}, keys: {} };
+const ALIAS_TO_PROVIDER_ID = Object.entries(PROVIDER_ID_TO_ALIAS).reduce(
+  (acc, [providerId, alias]) => {
+    if (alias) acc[alias] = providerId;
+    acc[providerId] = providerId;
+    return acc;
+  },
+  {}
+);
+
+function resolveProviderAliasOrId(providerOrAlias) {
+  if (typeof providerOrAlias !== "string") return providerOrAlias;
+  return ALIAS_TO_PROVIDER_ID[providerOrAlias] || providerOrAlias;
+}
+
+function getComboModelProvider(modelEntry) {
+  if (modelEntry && typeof modelEntry.provider === "string") {
+    return resolveProviderAliasOrId(modelEntry.provider);
+  }
+
+  const modelValue =
+    typeof modelEntry === "string"
+      ? modelEntry
+      : typeof modelEntry?.model === "string"
+        ? modelEntry.model
+        : null;
+
+  if (!modelValue) return null;
+
+  const [providerOrAlias] = modelValue.split("/", 1);
+  if (!providerOrAlias) return null;
+  return resolveProviderAliasOrId(providerOrAlias);
+}
 
 function migrateProxyEntry(value) {
   if (!value) return null;
@@ -268,10 +301,16 @@ export async function resolveProxyForConnection(connectionId) {
       const combos = db.prepare("SELECT id, data FROM combos").all();
       for (const comboRow of combos) {
         if (config.combos[comboRow.id]) {
-          const combo = JSON.parse(comboRow.data);
-          const usesProvider = (combo.models || []).some((m) => m.provider === connection.provider);
-          if (usesProvider) {
-            return { proxy: config.combos[comboRow.id], level: "combo", levelId: comboRow.id };
+          try {
+            const combo = JSON.parse(comboRow.data);
+            const usesProvider = (combo.models || []).some(
+              (entry) => getComboModelProvider(entry) === connection.provider
+            );
+            if (usesProvider) {
+              return { proxy: config.combos[comboRow.id], level: "combo", levelId: comboRow.id };
+            }
+          } catch {
+            // Ignore malformed combo records during proxy resolution.
           }
         }
       }

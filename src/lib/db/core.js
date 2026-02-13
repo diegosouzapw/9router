@@ -11,8 +11,7 @@ import { resolveDataDir, getLegacyDotDataDir } from "../dataPaths.js";
 
 // ──────────────── Environment Detection ────────────────
 
-export const isCloud =
-  typeof globalThis.caches === "object" && globalThis.caches !== null;
+export const isCloud = typeof globalThis.caches === "object" && globalThis.caches !== null;
 
 export const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
 
@@ -66,6 +65,7 @@ const SCHEMA_SQL = `
     default_model TEXT,
     token_type TEXT,
     consecutive_use_count INTEGER DEFAULT 0,
+    rate_limit_protection INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -182,10 +182,14 @@ export function rowToCamel(row) {
   const result = {};
   for (const [k, v] of Object.entries(row)) {
     const camelKey = toCamelCase(k);
-    if (camelKey === "isActive") {
+    if (camelKey === "isActive" || camelKey === "rateLimitProtection") {
       result[camelKey] = v === 1 || v === true;
     } else if (camelKey === "providerSpecificData" && typeof v === "string") {
-      try { result[camelKey] = JSON.parse(v); } catch { result[camelKey] = v; }
+      try {
+        result[camelKey] = JSON.parse(v);
+      } catch {
+        result[camelKey] = v;
+      }
     } else {
       result[camelKey] = v;
     }
@@ -207,6 +211,21 @@ export function cleanNulls(obj) {
 
 let _db = null;
 
+function ensureProviderConnectionsColumns(db) {
+  try {
+    const columns = db.prepare("PRAGMA table_info(provider_connections)").all();
+    const columnNames = new Set(columns.map((column) => column.name));
+    if (!columnNames.has("rate_limit_protection")) {
+      db.exec(
+        "ALTER TABLE provider_connections ADD COLUMN rate_limit_protection INTEGER DEFAULT 0"
+      );
+      console.log("[DB] Added provider_connections.rate_limit_protection column");
+    }
+  } catch (error) {
+    console.warn("[DB] Failed to verify provider_connections schema:", error.message);
+  }
+}
+
 export function getDbInstance() {
   if (_db) return _db;
 
@@ -224,22 +243,32 @@ export function getDbInstance() {
   if (fs.existsSync(SQLITE_FILE)) {
     try {
       const probe = new Database(SQLITE_FILE, { readonly: true });
-      const hasOldSchema = probe.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
-      ).get();
+      const hasOldSchema = probe
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
+        .get();
       probe.close();
 
       if (hasOldSchema) {
         const oldPath = SQLITE_FILE + ".old-schema";
-        console.log(`[DB] Old incompatible schema detected — renaming to ${path.basename(oldPath)}`);
+        console.log(
+          `[DB] Old incompatible schema detected — renaming to ${path.basename(oldPath)}`
+        );
         fs.renameSync(SQLITE_FILE, oldPath);
         for (const ext of ["-wal", "-shm"]) {
-          try { if (fs.existsSync(SQLITE_FILE + ext)) fs.unlinkSync(SQLITE_FILE + ext); } catch { /* ok */ }
+          try {
+            if (fs.existsSync(SQLITE_FILE + ext)) fs.unlinkSync(SQLITE_FILE + ext);
+          } catch {
+            /* ok */
+          }
         }
       }
     } catch (e) {
       console.warn("[DB] Could not probe existing DB, will create fresh:", e.message);
-      try { fs.unlinkSync(SQLITE_FILE); } catch { /* ok */ }
+      try {
+        fs.unlinkSync(SQLITE_FILE);
+      } catch {
+        /* ok */
+      }
     }
   }
 
@@ -248,6 +277,7 @@ export function getDbInstance() {
   _db.pragma("busy_timeout = 5000");
   _db.pragma("synchronous = NORMAL");
   _db.exec(SCHEMA_SQL);
+  ensureProviderConnectionsColumns(_db);
 
   // Auto-migrate from db.json if exists
   if (JSON_DB_FILE && fs.existsSync(JSON_DB_FILE)) {
@@ -255,7 +285,9 @@ export function getDbInstance() {
   }
 
   // Store schema version
-  const versionStmt = _db.prepare("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('schema_version', '1')");
+  const versionStmt = _db.prepare(
+    "INSERT OR REPLACE INTO db_meta (key, value) VALUES ('schema_version', '1')"
+  );
   versionStmt.run();
 
   console.log(`[DB] SQLite database ready: ${SQLITE_FILE}`);
@@ -289,7 +321,9 @@ function migrateFromJson(db, jsonPath) {
       return;
     }
 
-    console.log(`[DB] Migrating db.json → SQLite (${connCount} connections, ${nodeCount} nodes, ${keyCount} keys)...`);
+    console.log(
+      `[DB] Migrating db.json → SQLite (${connCount} connections, ${nodeCount} nodes, ${keyCount} keys)...`
+    );
 
     const migrate = db.transaction(() => {
       // 1. Provider Connections
@@ -302,7 +336,7 @@ function migrateFromJson(db, jsonPath) {
           rate_limited_until, health_check_interval, last_health_check_at,
           last_tested, api_key, id_token, provider_specific_data,
           expires_in, display_name, global_priority, default_model,
-          token_type, consecutive_use_count, created_at, updated_at
+          token_type, consecutive_use_count, rate_limit_protection, created_at, updated_at
         ) VALUES (
           @id, @provider, @authType, @name, @email, @priority, @isActive,
           @accessToken, @refreshToken, @expiresAt, @tokenExpiresAt,
@@ -311,29 +345,49 @@ function migrateFromJson(db, jsonPath) {
           @rateLimitedUntil, @healthCheckInterval, @lastHealthCheckAt,
           @lastTested, @apiKey, @idToken, @providerSpecificData,
           @expiresIn, @displayName, @globalPriority, @defaultModel,
-          @tokenType, @consecutiveUseCount, @createdAt, @updatedAt
+          @tokenType, @consecutiveUseCount, @rateLimitProtection, @createdAt, @updatedAt
         )
       `);
 
       for (const conn of data.providerConnections || []) {
         insertConn.run({
-          id: conn.id, provider: conn.provider, authType: conn.authType || "oauth",
-          name: conn.name || null, email: conn.email || null, priority: conn.priority || 0,
+          id: conn.id,
+          provider: conn.provider,
+          authType: conn.authType || "oauth",
+          name: conn.name || null,
+          email: conn.email || null,
+          priority: conn.priority || 0,
           isActive: conn.isActive === false ? 0 : 1,
-          accessToken: conn.accessToken || null, refreshToken: conn.refreshToken || null,
-          expiresAt: conn.expiresAt || null, tokenExpiresAt: conn.tokenExpiresAt || null,
-          scope: conn.scope || null, projectId: conn.projectId || null,
-          testStatus: conn.testStatus || null, errorCode: conn.errorCode || null,
-          lastError: conn.lastError || null, lastErrorAt: conn.lastErrorAt || null,
-          lastErrorType: conn.lastErrorType || null, lastErrorSource: conn.lastErrorSource || null,
-          backoffLevel: conn.backoffLevel || 0, rateLimitedUntil: conn.rateLimitedUntil || null,
-          healthCheckInterval: conn.healthCheckInterval || null, lastHealthCheckAt: conn.lastHealthCheckAt || null,
-          lastTested: conn.lastTested || null, apiKey: conn.apiKey || null,
+          accessToken: conn.accessToken || null,
+          refreshToken: conn.refreshToken || null,
+          expiresAt: conn.expiresAt || null,
+          tokenExpiresAt: conn.tokenExpiresAt || null,
+          scope: conn.scope || null,
+          projectId: conn.projectId || null,
+          testStatus: conn.testStatus || null,
+          errorCode: conn.errorCode || null,
+          lastError: conn.lastError || null,
+          lastErrorAt: conn.lastErrorAt || null,
+          lastErrorType: conn.lastErrorType || null,
+          lastErrorSource: conn.lastErrorSource || null,
+          backoffLevel: conn.backoffLevel || 0,
+          rateLimitedUntil: conn.rateLimitedUntil || null,
+          healthCheckInterval: conn.healthCheckInterval || null,
+          lastHealthCheckAt: conn.lastHealthCheckAt || null,
+          lastTested: conn.lastTested || null,
+          apiKey: conn.apiKey || null,
           idToken: conn.idToken || null,
-          providerSpecificData: conn.providerSpecificData ? JSON.stringify(conn.providerSpecificData) : null,
-          expiresIn: conn.expiresIn || null, displayName: conn.displayName || null,
-          globalPriority: conn.globalPriority || null, defaultModel: conn.defaultModel || null,
-          tokenType: conn.tokenType || null, consecutiveUseCount: conn.consecutiveUseCount || 0,
+          providerSpecificData: conn.providerSpecificData
+            ? JSON.stringify(conn.providerSpecificData)
+            : null,
+          expiresIn: conn.expiresIn || null,
+          displayName: conn.displayName || null,
+          globalPriority: conn.globalPriority || null,
+          defaultModel: conn.defaultModel || null,
+          tokenType: conn.tokenType || null,
+          consecutiveUseCount: conn.consecutiveUseCount || 0,
+          rateLimitProtection:
+            conn.rateLimitProtection === true || conn.rateLimitProtection === 1 ? 1 : 0,
           createdAt: conn.createdAt || new Date().toISOString(),
           updatedAt: conn.updatedAt || new Date().toISOString(),
         });
@@ -346,15 +400,21 @@ function migrateFromJson(db, jsonPath) {
       `);
       for (const node of data.providerNodes || []) {
         insertNode.run({
-          id: node.id, type: node.type, name: node.name,
-          prefix: node.prefix || null, apiType: node.apiType || null, baseUrl: node.baseUrl || null,
+          id: node.id,
+          type: node.type,
+          name: node.name,
+          prefix: node.prefix || null,
+          apiType: node.apiType || null,
+          baseUrl: node.baseUrl || null,
           createdAt: node.createdAt || new Date().toISOString(),
           updatedAt: node.updatedAt || new Date().toISOString(),
         });
       }
 
       // 3. Key-Value pairs
-      const insertKv = db.prepare("INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES (?, ?, ?)");
+      const insertKv = db.prepare(
+        "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES (?, ?, ?)"
+      );
 
       for (const [alias, model] of Object.entries(data.modelAliases || {})) {
         insertKv.run("modelAliases", alias, JSON.stringify(model));
@@ -385,7 +445,9 @@ function migrateFromJson(db, jsonPath) {
       `);
       for (const combo of data.combos || []) {
         insertCombo.run({
-          id: combo.id, name: combo.name, data: JSON.stringify(combo),
+          id: combo.id,
+          name: combo.name,
+          data: JSON.stringify(combo),
           createdAt: combo.createdAt || new Date().toISOString(),
           updatedAt: combo.updatedAt || new Date().toISOString(),
         });
@@ -398,7 +460,9 @@ function migrateFromJson(db, jsonPath) {
       `);
       for (const apiKey of data.apiKeys || []) {
         insertKey.run({
-          id: apiKey.id, name: apiKey.name, key: apiKey.key,
+          id: apiKey.id,
+          name: apiKey.name,
+          key: apiKey.key,
           machineId: apiKey.machineId || null,
           createdAt: apiKey.createdAt || new Date().toISOString(),
         });
@@ -413,9 +477,11 @@ function migrateFromJson(db, jsonPath) {
 
     const legacyBackupDir = path.join(DATA_DIR, "db_backups");
     if (fs.existsSync(legacyBackupDir)) {
-      const jsonBackups = fs.readdirSync(legacyBackupDir).filter(f => f.endsWith(".json"));
+      const jsonBackups = fs.readdirSync(legacyBackupDir).filter((f) => f.endsWith(".json"));
       if (jsonBackups.length > 0) {
-        console.log(`[DB] Note: ${jsonBackups.length} legacy .json backups remain in ${legacyBackupDir}`);
+        console.log(
+          `[DB] Note: ${jsonBackups.length} legacy .json backups remain in ${legacyBackupDir}`
+        );
       }
     }
   } catch (err) {

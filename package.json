@@ -12,6 +12,7 @@
     "start": "next start --port 20128",
     "lint": "eslint .",
     "test:plan3": "node --test tests/unit/plan3-p0.test.mjs",
+    "test:fixes": "node --test tests/unit/fixes-p1.test.mjs",
     "test": "npm run build",
     "test:e2e": "npx playwright test",
     "check": "npm run lint && npm run test",
