@@ -15,6 +15,8 @@ export default function ClineToolCard({
   apiKeys,
   activeProviders,
   cloudEnabled,
+  eagerStatus,
+  statusStyle,
 }) {
   const [clineStatus, setClineStatus] = useState(null);
   const [checkingCline, setCheckingCline] = useState(false);
@@ -82,7 +84,7 @@ export default function ClineToolCard({
 
   const fetchBackups = async () => {
     try {
-      const res = await fetch("/api/cli-tools/backups?toolId=cline");
+      const res = await fetch("/api/cli-tools/backups?tool=cline");
       if (res.ok) {
         const data = await res.json();
         setBackups(data.backups || []);
@@ -96,7 +98,7 @@ export default function ClineToolCard({
       const res = await fetch("/api/cli-tools/backups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toolId: "cline", backupId }),
+        body: JSON.stringify({ tool: "cline", backupId }),
       });
       if (res.ok) {
         setMessage({ type: "success", text: "Backup restored! Reloading status..." });
@@ -199,19 +201,23 @@ export default function ClineToolCard({
   };
 
   const renderStatusBadge = () => {
-    if (!cliReady) return null;
-    const badges = {
-      configured: { class: "bg-green-500/10 text-green-600 dark:text-green-400", text: "Connected" },
-      not_configured: { class: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400", text: "Not configured" },
-      other: { class: "bg-blue-500/10 text-blue-600 dark:text-blue-400", text: "Custom config" },
-    };
-    const badge = badges[configStatus];
-    if (!badge) return null;
-    return <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full ${badge.class}`}>{badge.text}</span>;
+    const status = configStatus || eagerStatus;
+    const style = configStatus ? {
+      configured: { badge: 'bg-green-500/20 text-green-500', icon: 'check_circle', label: 'Connected' },
+      not_configured: { badge: 'bg-yellow-500/20 text-yellow-500', icon: 'warning', label: 'Not configured' },
+      other: { badge: 'bg-blue-500/20 text-blue-500', icon: 'info', label: 'Custom config' },
+    }[configStatus] : statusStyle;
+    if (!style) return null;
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${style.badge}`}>
+        <span className="material-symbols-outlined text-[12px]">{style.icon}</span>
+        {style.label}
+      </span>
+    );
   };
 
   return (
-    <Card padding="sm" className="overflow-hidden">
+    <Card padding="sm" className={`overflow-hidden ${(statusStyle || (configStatus && { configured: 'border-l-2 border-l-green-500', not_configured: 'border-l-2 border-l-yellow-500', other: 'border-l-2 border-l-blue-500' }[configStatus]))?.border || statusStyle?.border || ''}`}>
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 rounded-lg flex items-center justify-center shrink-0">

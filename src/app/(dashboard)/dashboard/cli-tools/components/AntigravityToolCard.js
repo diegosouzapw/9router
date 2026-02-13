@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Button, Badge, Modal, Input, ModelSelectModal } from "@/shared/components";
+import { Card, Button, Modal, Input, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
 
 export default function AntigravityToolCard({
@@ -13,6 +13,8 @@ export default function AntigravityToolCard({
   activeProviders,
   hasActiveProviders,
   cloudEnabled,
+  eagerStatus,
+  statusStyle,
 }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -203,7 +205,7 @@ export default function AntigravityToolCard({
   const isRunning = status?.running;
 
   return (
-    <Card padding="sm" className="overflow-hidden">
+    <Card padding="sm" className={`overflow-hidden ${isRunning ? 'border-l-2 border-l-green-500' : (statusStyle?.border || 'border-l-2 border-l-zinc-500/40')}`}>
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
@@ -221,9 +223,15 @@ export default function AntigravityToolCard({
             <div className="flex items-center gap-2">
               <h3 className="font-medium text-sm">{tool.name}</h3>
               {isRunning ? (
-                <Badge variant="success" size="sm">Active</Badge>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-green-500/20 text-green-500">
+                  <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                  Active
+                </span>
               ) : (
-                <Badge variant="default" size="sm">Inactive</Badge>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-zinc-500/15 text-zinc-500">
+                  <span className="material-symbols-outlined text-[12px]">radio_button_unchecked</span>
+                  Inactive
+                </span>
               )}
             </div>
             <p className="text-xs text-text-muted truncate">{tool.description}</p>

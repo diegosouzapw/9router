@@ -3,6 +3,8 @@ import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getAllCustomModels } from "@/lib/localDb";
 import { getAllEmbeddingModels } from "open-sse/config/embeddingRegistry.js";
 import { getAllImageModels } from "open-sse/config/imageRegistry.js";
+import { getAllAudioModels } from "open-sse/config/audioRegistry.js";
+import { getRegistryEntry } from "open-sse/config/providerRegistry.js";
 
 const FALLBACK_ALIAS_TO_PROVIDER = {
   ag: "antigravity",
@@ -18,6 +20,44 @@ const FALLBACK_ALIAS_TO_PROVIDER = {
   kr: "kiro",
   qw: "qwen",
 };
+
+// ── Format-to-type mapping ─────────────────────────────────────────────
+// Determines which endpoint type a provider format maps to.
+const FORMAT_TO_TYPE = {
+  "openai": "chat",
+  "openai-responses": "responses",
+  "claude": "anthropic",
+  "gemini": "chat",
+  "gemini-cli": "chat",
+  "antigravity": "chat",
+  "kiro": "chat",
+  "cursor": "chat",
+  "openrouter": "chat",
+};
+
+const TYPE_TO_ENDPOINT = {
+  "chat": "/v1/chat/completions",
+  "responses": "/v1/responses",
+  "anthropic": "/v1/messages",
+  "embedding": "/v1/embeddings",
+  "image": "/v1/images/generations",
+  "audio-tts": "/v1/audio/speech",
+  "audio-stt": "/v1/audio/transcriptions",
+  "combo": null,
+};
+
+/**
+ * Resolve the type for a chat model based on its provider format and per-model targetFormat.
+ */
+function resolveModelType(alias, model) {
+  // Per-model override (e.g. GitHub Copilot codex models → responses)
+  if (model?.targetFormat === "openai-responses") return "responses";
+
+  const entry = getRegistryEntry(alias);
+  if (!entry) return "chat"; // fallback
+
+  return FORMAT_TO_TYPE[entry.format] || "chat";
+}
 
 function buildAliasMaps() {
   const aliasToProviderId = {};
@@ -36,9 +76,6 @@ function buildAliasMaps() {
   }
 
   for (const [left, right] of Object.entries(PROVIDER_ID_TO_ALIAS)) {
-    // Handle both possible directions:
-    // - providerId -> alias
-    // - alias -> providerId
     if (PROVIDER_MODELS[left]) {
       aliasToProviderId[left] = aliasToProviderId[left] || right;
       continue;
@@ -62,8 +99,6 @@ function buildAliasMaps() {
     }
   }
 
-  // Safety net for environments where alias maps are partially loaded during
-  // module initialization/circular imports.
   for (const [alias, providerId] of Object.entries(FALLBACK_ALIAS_TO_PROVIDER)) {
     if (!aliasToProviderId[alias]) aliasToProviderId[alias] = providerId;
     if (!aliasToProviderId[providerId]) aliasToProviderId[providerId] = providerId;
@@ -88,7 +123,8 @@ export async function OPTIONS() {
 
 /**
  * GET /v1/models - OpenAI compatible models list
- * Returns models from all active providers, combos, embeddings, and image models in OpenAI format
+ * Returns models from all active providers, combos, embeddings, images, and audio in OpenAI format.
+ * Every model now includes `type`, `endpoint`, and `format` fields for UI categorization.
  */
 export async function GET() {
   try {
@@ -98,10 +134,8 @@ export async function GET() {
     let connections = [];
     try {
       connections = await getProviderConnections();
-      // Filter to only active connections
       connections = connections.filter(c => c.isActive !== false);
     } catch (e) {
-      // If database not available, return all models
       console.log("Could not fetch providers, returning all models");
     }
 
@@ -121,53 +155,61 @@ export async function GET() {
       activeAliases.add(conn.provider);
     }
 
-    // Collect models from active providers (or all if none active)
     const models = [];
     const timestamp = Math.floor(Date.now() / 1000);
 
-    // Add combos first (they appear at the top)
+    // ── Combos ─────────────────────────────────────────────────────────
     for (const combo of combos) {
       models.push({
         id: combo.name,
         object: "model",
         created: timestamp,
         owned_by: "combo",
+        type: "combo",
+        endpoint: null,
         permission: [],
         root: combo.name,
         parent: null,
       });
     }
 
-    // Add provider models (chat)
+    // ── Provider models (chat / responses / anthropic) ─────────────────
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       const providerId = aliasToProviderId[alias] || alias;
       const canonicalProviderId = FALLBACK_ALIAS_TO_PROVIDER[alias] || providerId;
 
-      // If we have active providers, only include those; otherwise include all
       if (connections.length > 0 && !activeAliases.has(alias) && !activeAliases.has(canonicalProviderId)) {
         continue;
       }
 
+      const entry = getRegistryEntry(alias);
+      const providerFormat = entry?.format || "openai";
+
       for (const model of providerModels) {
+        const modelType = resolveModelType(alias, model);
         const aliasId = `${alias}/${model.id}`;
         models.push({
           id: aliasId,
           object: "model",
           created: timestamp,
           owned_by: canonicalProviderId,
+          type: modelType,
+          endpoint: TYPE_TO_ENDPOINT[modelType] || "/v1/chat/completions",
+          format: providerFormat,
           permission: [],
           root: model.id,
           parent: null,
         });
 
-        // Add provider-id prefix in addition to short alias (ex: kiro/model + kr/model).
-        // This improves compatibility for clients that expect full provider names.
         if (canonicalProviderId !== alias) {
           models.push({
             id: `${canonicalProviderId}/${model.id}`,
             object: "model",
             created: timestamp,
             owned_by: canonicalProviderId,
+            type: modelType,
+            endpoint: TYPE_TO_ENDPOINT[modelType] || "/v1/chat/completions",
+            format: providerFormat,
             permission: [],
             root: model.id,
             parent: aliasId,
@@ -176,7 +218,7 @@ export async function GET() {
       }
     }
 
-    // Add embedding models
+    // ── Embedding models ───────────────────────────────────────────────
     for (const embModel of getAllEmbeddingModels()) {
       models.push({
         id: embModel.id,
@@ -184,11 +226,12 @@ export async function GET() {
         created: timestamp,
         owned_by: embModel.provider,
         type: "embedding",
+        endpoint: "/v1/embeddings",
         dimensions: embModel.dimensions,
       });
     }
 
-    // Add image models
+    // ── Image models ──────────────────────────────────────────────────
     for (const imgModel of getAllImageModels()) {
       models.push({
         id: imgModel.id,
@@ -196,21 +239,38 @@ export async function GET() {
         created: timestamp,
         owned_by: imgModel.provider,
         type: "image",
+        endpoint: "/v1/images/generations",
         supported_sizes: imgModel.supportedSizes,
       });
     }
 
-    // Add custom models (user-defined)
+    // ── Audio models (TTS + STT) ──────────────────────────────────────
+    for (const audioModel of getAllAudioModels()) {
+      const audioType = audioModel.subtype === "tts" ? "audio-tts" : "audio-stt";
+      models.push({
+        id: audioModel.id,
+        object: "model",
+        created: timestamp,
+        owned_by: audioModel.provider,
+        type: audioType,
+        endpoint: TYPE_TO_ENDPOINT[audioType],
+        ...(audioModel.voices ? { voices: audioModel.voices } : {}),
+      });
+    }
+
+    // ── Custom models (user-defined) ──────────────────────────────────
     try {
       const customModelsMap = await getAllCustomModels();
       for (const [providerId, providerCustomModels] of Object.entries(customModelsMap)) {
         const alias = providerIdToAlias[providerId] || providerId;
         const canonicalProviderId = FALLBACK_ALIAS_TO_PROVIDER[alias] || providerId;
-        // Only include if provider is active (or no connections configured)
         if (connections.length > 0 && !activeAliases.has(alias) && !activeAliases.has(canonicalProviderId)) continue;
 
+        const entry = getRegistryEntry(alias) || getRegistryEntry(canonicalProviderId);
+        const providerFormat = entry?.format || "openai";
+        const baseType = FORMAT_TO_TYPE[providerFormat] || "chat";
+
         for (const model of providerCustomModels) {
-          // Skip if already added as built-in
           const aliasId = `${alias}/${model.id}`;
           if (models.some(m => m.id === aliasId)) continue;
 
@@ -219,6 +279,9 @@ export async function GET() {
             object: "model",
             created: timestamp,
             owned_by: canonicalProviderId,
+            type: baseType,
+            endpoint: TYPE_TO_ENDPOINT[baseType] || "/v1/chat/completions",
+            format: providerFormat,
             permission: [],
             root: model.id,
             parent: null,
@@ -233,6 +296,9 @@ export async function GET() {
               object: "model",
               created: timestamp,
               owned_by: canonicalProviderId,
+              type: baseType,
+              endpoint: TYPE_TO_ENDPOINT[baseType] || "/v1/chat/completions",
+              format: providerFormat,
               permission: [],
               root: model.id,
               parent: aliasId,

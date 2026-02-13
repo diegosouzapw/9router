@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Card, Button, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
 
-export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false }) {
+export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false, eagerStatus, statusStyle }) {
   const [copiedField, setCopiedField] = useState(null);
   const [showModelModal, setShowModelModal] = useState(false);
   const [modelValue, setModelValue] = useState("");
@@ -411,7 +411,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   return (
-    <Card padding="sm" className="overflow-hidden">
+    <Card padding="sm" className={`overflow-hidden ${statusStyle?.border || ''}`}>
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 rounded-lg flex items-center justify-center shrink-0">
@@ -420,23 +420,33 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="font-medium text-sm">{tool.name}</h3>
-              {runtimeStatus && !runtimeStatus.error && (
-                <span
-                  className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full ${
-                    runtimeStatus.reason === "not_required"
-                      ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                      : runtimeStatus.installed && runtimeStatus.runnable
-                        ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                        : "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
-                  }`}
-                >
-                  {runtimeStatus.reason === "not_required"
-                    ? "Guide"
+              {/* Show eager badge from batch status, or runtime badge after expand */}
+              {(() => {
+                // After expansion, if runtime is loaded, show runtime badge
+                if (runtimeStatus && !runtimeStatus.error) {
+                  const rBadge = runtimeStatus.reason === "not_required"
+                    ? { badge: 'bg-purple-500/15 text-purple-500', icon: 'menu_book', label: 'Guide' }
                     : runtimeStatus.installed && runtimeStatus.runnable
-                      ? "Detected"
-                      : "Not ready"}
-                </span>
-              )}
+                      ? { badge: 'bg-green-500/20 text-green-500', icon: 'check_circle', label: 'Detected' }
+                      : { badge: 'bg-yellow-500/20 text-yellow-500', icon: 'warning', label: 'Not ready' };
+                  return (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${rBadge.badge}`}>
+                      <span className="material-symbols-outlined text-[12px]">{rBadge.icon}</span>
+                      {rBadge.label}
+                    </span>
+                  );
+                }
+                // Before expansion, show eager status badge
+                if (statusStyle) {
+                  return (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${statusStyle.badge}`}>
+                      <span className="material-symbols-outlined text-[12px]">{statusStyle.icon}</span>
+                      {statusStyle.label}
+                    </span>
+                  );
+                }
+                return null;
+              })()}
             </div>
             <p className="text-xs text-text-muted truncate">{tool.description}</p>
           </div>

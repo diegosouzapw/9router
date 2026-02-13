@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 
-export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled }) {
+export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, eagerStatus, statusStyle }) {
   const [codexStatus, setCodexStatus] = useState(null);
   const [checkingCodex, setCheckingCodex] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -285,7 +285,7 @@ wire_api = "responses"
   };
 
   return (
-    <Card padding="sm" className="overflow-hidden">
+    <Card padding="sm" className={`overflow-hidden ${(statusStyle || (configStatus && { configured: 'border-l-2 border-l-green-500', not_configured: 'border-l-2 border-l-yellow-500', other: 'border-l-2 border-l-blue-500' }[configStatus]))?.border || statusStyle?.border || ''}`}>
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
@@ -294,9 +294,17 @@ wire_api = "responses"
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="font-medium text-sm">{tool.name}</h3>
-              {configStatus === "configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 rounded-full">Connected</span>}
-              {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-full">Not configured</span>}
-              {configStatus === "other" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full">Other</span>}
+              {(() => {
+                const status = configStatus || eagerStatus;
+                const style = configStatus ? { configured: { badge: 'bg-green-500/20 text-green-500', icon: 'check_circle', label: 'Connected' }, not_configured: { badge: 'bg-yellow-500/20 text-yellow-500', icon: 'warning', label: 'Not configured' }, other: { badge: 'bg-blue-500/20 text-blue-500', icon: 'info', label: 'Other' } }[configStatus] : statusStyle;
+                if (!style) return null;
+                return (
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${style.badge}`}>
+                    <span className="material-symbols-outlined text-[12px]">{style.icon}</span>
+                    {style.label}
+                  </span>
+                );
+              })()}
             </div>
             <p className="text-xs text-text-muted truncate">{tool.description}</p>
           </div>

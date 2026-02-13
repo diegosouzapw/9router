@@ -8,6 +8,17 @@ import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, ClineTo
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
+// Map configStatus → visual classes
+const STATUS_STYLES = {
+  configured: { border: "border-l-2 border-l-green-500", badge: "bg-green-500/20 text-green-500", icon: "check_circle", label: "Connected" },
+  active:     { border: "border-l-2 border-l-green-500", badge: "bg-green-500/20 text-green-500", icon: "check_circle", label: "Active" },
+  not_configured: { border: "border-l-2 border-l-yellow-500", badge: "bg-yellow-500/20 text-yellow-500", icon: "warning", label: "Not configured" },
+  not_ready:  { border: "border-l-2 border-l-yellow-500/50", badge: "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400", icon: "warning", label: "Not installed" },
+  inactive:   { border: "border-l-2 border-l-zinc-500/40", badge: "bg-zinc-500/15 text-zinc-500", icon: "radio_button_unchecked", label: "Inactive" },
+  other:      { border: "border-l-2 border-l-blue-500", badge: "bg-blue-500/20 text-blue-500", icon: "info", label: "Other" },
+  guide:      { border: "border-l-2 border-l-purple-500/40", badge: "bg-purple-500/15 text-purple-500", icon: "menu_book", label: "Guide" },
+};
+
 export default function CLIToolsPageClient({ machineId }) {
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,12 +26,26 @@ export default function CLIToolsPageClient({ machineId }) {
   const [modelMappings, setModelMappings] = useState({});
   const [cloudEnabled, setCloudEnabled] = useState(false);
   const [apiKeys, setApiKeys] = useState([]);
+  const [toolStatuses, setToolStatuses] = useState({});
 
   useEffect(() => {
     fetchConnections();
     loadCloudSettings();
     fetchApiKeys();
+    fetchBatchStatus();
   }, []);
+
+  const fetchBatchStatus = async () => {
+    try {
+      const res = await fetch("/api/cli-tools/batch-status");
+      if (res.ok) {
+        const data = await res.json();
+        setToolStatuses(data.statuses || {});
+      }
+    } catch (error) {
+      console.log("Error fetching batch status:", error);
+    }
+  };
 
   const loadCloudSettings = async () => {
     try {
@@ -133,12 +158,16 @@ export default function CLIToolsPageClient({ machineId }) {
   const hasActiveProviders = availableModels.length > 0;
 
   const renderToolCard = (toolId, tool) => {
+    const eagerStatus = toolStatuses[toolId]?.configStatus || null;
+    const statusStyle = eagerStatus ? STATUS_STYLES[eagerStatus] || null : null;
     const commonProps = {
       tool,
       isExpanded: expandedTool === toolId,
       onToggle: () => setExpandedTool(expandedTool === toolId ? null : toolId),
       baseUrl: getBaseUrl(),
       apiKeys,
+      eagerStatus,
+      statusStyle,
     };
 
     switch (toolId) {

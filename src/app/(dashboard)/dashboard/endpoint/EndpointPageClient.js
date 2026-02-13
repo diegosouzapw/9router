@@ -51,12 +51,26 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  // Categorize models by endpoint type
+  // Dynamic endpoint configuration
+  const ENDPOINT_CONFIG = [
+    { key: "chat", types: ["chat", undefined], icon: "chat", color: "blue", title: "Chat Completions", path: "/v1/chat/completions", desc: "Streaming & non-streaming chat with all providers" },
+    { key: "responses", types: ["responses"], icon: "swap_horiz", color: "amber", title: "Responses API", path: "/v1/responses", desc: "OpenAI Responses format (Codex, Copilot)" },
+    { key: "anthropic", types: ["anthropic"], icon: "smart_toy", color: "orange", title: "Anthropic Messages", path: "/v1/messages", desc: "Claude/Anthropic native format" },
+    { key: "embedding", types: ["embedding"], icon: "data_array", color: "emerald", title: "Embeddings", path: "/v1/embeddings", desc: "Text embeddings for search & RAG pipelines" },
+    { key: "image", types: ["image"], icon: "image", color: "purple", title: "Image Generation", path: "/v1/images/generations", desc: "Generate images from text prompts" },
+    { key: "audio-tts", types: ["audio-tts"], icon: "record_voice_over", color: "pink", title: "Text to Speech", path: "/v1/audio/speech", desc: "Generate audio from text (TTS)" },
+    { key: "audio-stt", types: ["audio-stt"], icon: "hearing", color: "cyan", title: "Speech to Text", path: "/v1/audio/transcriptions", desc: "Transcribe audio to text (STT)" },
+  ];
+
+  // Categorize models by endpoint type (dynamic)
   const endpointData = useMemo(() => {
-    const chat = allModels.filter(m => !m.type);
-    const embeddings = allModels.filter(m => m.type === "embedding");
-    const images = allModels.filter(m => m.type === "image");
-    return { chat, embeddings, images };
+    return ENDPOINT_CONFIG.map(cfg => ({
+      ...cfg,
+      models: allModels.filter(m => {
+        const mType = m.type || (cfg.types.includes(undefined) ? undefined : "__none__");
+        return cfg.types.includes(mType);
+      }),
+    })).filter(ep => ep.models.length > 0);
   }, [allModels]);
 
   const providerStats = useMemo(() => {
@@ -487,59 +501,29 @@ export default function APIPageClient({ machineId }) {
           <div>
             <h2 className="text-lg font-semibold">Available Endpoints</h2>
             <p className="text-sm text-text-muted">
-              {allModels.length} models across 3 endpoints
+              {allModels.filter(m => m.type !== "combo").length} models across {endpointData.length} endpoint{endpointData.length !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
 
         <div className="flex flex-col gap-3">
-          {/* Chat Completions */}
-          <EndpointSection
-            icon="chat"
-            iconColor="text-blue-500"
-            iconBg="bg-blue-500/10"
-            title="Chat Completions"
-            path="/v1/chat/completions"
-            description="Streaming & non-streaming chat with all providers"
-            models={endpointData.chat}
-            expanded={expandedEndpoint === "chat"}
-            onToggle={() => setExpandedEndpoint(expandedEndpoint === "chat" ? null : "chat")}
-            copy={copy}
-            copied={copied}
-            baseUrl={currentEndpoint}
-          />
-
-          {/* Embeddings */}
-          <EndpointSection
-            icon="data_array"
-            iconColor="text-emerald-500"
-            iconBg="bg-emerald-500/10"
-            title="Embeddings"
-            path="/v1/embeddings"
-            description="Text embeddings for search & RAG pipelines"
-            models={endpointData.embeddings}
-            expanded={expandedEndpoint === "embeddings"}
-            onToggle={() => setExpandedEndpoint(expandedEndpoint === "embeddings" ? null : "embeddings")}
-            copy={copy}
-            copied={copied}
-            baseUrl={currentEndpoint}
-          />
-
-          {/* Image Generation */}
-          <EndpointSection
-            icon="image"
-            iconColor="text-purple-500"
-            iconBg="bg-purple-500/10"
-            title="Image Generation"
-            path="/v1/images/generations"
-            description="Generate images from text prompts"
-            models={endpointData.images}
-            expanded={expandedEndpoint === "images"}
-            onToggle={() => setExpandedEndpoint(expandedEndpoint === "images" ? null : "images")}
-            copy={copy}
-            copied={copied}
-            baseUrl={currentEndpoint}
-          />
+          {endpointData.map(ep => (
+            <EndpointSection
+              key={ep.key}
+              icon={ep.icon}
+              iconColor={`text-${ep.color}-500`}
+              iconBg={`bg-${ep.color}-500/10`}
+              title={ep.title}
+              path={ep.path}
+              description={ep.desc}
+              models={ep.models}
+              expanded={expandedEndpoint === ep.key}
+              onToggle={() => setExpandedEndpoint(expandedEndpoint === ep.key ? null : ep.key)}
+              copy={copy}
+              copied={copied}
+              baseUrl={currentEndpoint}
+            />
+          ))}
         </div>
       </Card>
 
@@ -887,16 +871,22 @@ ProviderOverviewCard.propTypes = {
 
 // -- Sub-component: Provider Models Modal ------------------------------------------
 
+const MODEL_TYPE_GROUPS = [
+  { title: "Chat", icon: "chat", filter: m => !m.type || m.type === "chat" },
+  { title: "Responses", icon: "swap_horiz", filter: m => m.type === "responses" },
+  { title: "Anthropic", icon: "smart_toy", filter: m => m.type === "anthropic" },
+  { title: "Embedding", icon: "data_array", filter: m => m.type === "embedding" },
+  { title: "Image", icon: "image", filter: m => m.type === "image" },
+  { title: "Text to Speech", icon: "record_voice_over", filter: m => m.type === "audio-tts" },
+  { title: "Speech to Text", icon: "hearing", filter: m => m.type === "audio-stt" },
+];
+
 function ProviderModelsModal({ provider, models, copy, copied, onClose }) {
   // Get provider alias for matching models
   const providerAlias = provider.provider.alias || provider.id;
   const providerModels = useMemo(() => {
     return models.filter(m => m.owned_by === providerAlias || m.owned_by === provider.id);
   }, [models, providerAlias, provider.id]);
-
-  const chatModels = providerModels.filter(m => !m.type);
-  const embeddingModels = providerModels.filter(m => m.type === "embedding");
-  const imageModels = providerModels.filter(m => m.type === "image");
 
   const renderModelGroup = (title, icon, groupModels) => {
     if (groupModels.length === 0) return null;
@@ -939,9 +929,10 @@ function ProviderModelsModal({ provider, models, copy, copied, onClose }) {
           <p className="text-sm text-text-muted py-4 text-center">No models available for this provider.</p>
         ) : (
           <>
-            {renderModelGroup("Chat", "chat", chatModels)}
-            {renderModelGroup("Embedding", "data_array", embeddingModels)}
-            {renderModelGroup("Image", "image", imageModels)}
+            {MODEL_TYPE_GROUPS.map(g => {
+              const groupModels = providerModels.filter(g.filter);
+              return renderModelGroup(g.title, g.icon, groupModels);
+            })}
           </>
         )}
       </div>
