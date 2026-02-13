@@ -112,6 +112,50 @@ const SCHEMA_SQL = `
     key TEXT PRIMARY KEY,
     value TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS usage_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT,
+    model TEXT,
+    connection_id TEXT,
+    api_key_id TEXT,
+    api_key_name TEXT,
+    tokens_input INTEGER DEFAULT 0,
+    tokens_output INTEGER DEFAULT 0,
+    tokens_cache_read INTEGER DEFAULT 0,
+    tokens_cache_creation INTEGER DEFAULT 0,
+    tokens_reasoning INTEGER DEFAULT 0,
+    status TEXT,
+    timestamp TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_uh_timestamp ON usage_history(timestamp);
+  CREATE INDEX IF NOT EXISTS idx_uh_provider ON usage_history(provider);
+  CREATE INDEX IF NOT EXISTS idx_uh_model ON usage_history(model);
+
+  CREATE TABLE IF NOT EXISTS call_logs (
+    id TEXT PRIMARY KEY,
+    timestamp TEXT NOT NULL,
+    method TEXT,
+    path TEXT,
+    status INTEGER,
+    model TEXT,
+    provider TEXT,
+    account TEXT,
+    connection_id TEXT,
+    duration INTEGER DEFAULT 0,
+    tokens_in INTEGER DEFAULT 0,
+    tokens_out INTEGER DEFAULT 0,
+    source_format TEXT,
+    target_format TEXT,
+    api_key_id TEXT,
+    api_key_name TEXT,
+    combo_name TEXT,
+    request_body TEXT,
+    response_body TEXT,
+    error TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_cl_timestamp ON call_logs(timestamp);
+  CREATE INDEX IF NOT EXISTS idx_cl_status ON call_logs(status);
 `;
 
 // ──────────────── Column Mapping ────────────────
