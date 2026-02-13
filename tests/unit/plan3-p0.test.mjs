@@ -76,22 +76,20 @@ test("translateNonStreamingResponse converts Responses API payload to OpenAI cha
       {
         type: "message",
         role: "assistant",
-        content: [
-          { type: "output_text", text: "Hello from responses API." }
-        ]
+        content: [{ type: "output_text", text: "Hello from responses API." }],
       },
       {
         type: "function_call",
         id: "fc_1",
         call_id: "call_1",
         name: "sum",
-        arguments: "{\"a\":1,\"b\":2}"
-      }
+        arguments: '{"a":1,"b":2}',
+      },
     ],
     usage: {
       input_tokens: 11,
-      output_tokens: 7
-    }
+      output_tokens: 7,
+    },
   };
 
   const translated = translateNonStreamingResponse(
@@ -118,8 +116,8 @@ test("extractUsageFromResponse reads usage from Responses API payload", () => {
       input_tokens: 20,
       output_tokens: 9,
       cache_read_input_tokens: 4,
-      reasoning_tokens: 3
-    }
+      reasoning_tokens: 3,
+    },
   };
 
   const usage = extractUsageFromResponse(responseBody, "github");
@@ -133,7 +131,7 @@ test("detectFormat identifies OpenAI Responses when input is string", () => {
   const format = detectFormat({
     model: "gpt-5.1-codex",
     input: "hello world",
-    stream: true
+    stream: true,
   });
   assert.equal(format, FORMATS.OPENAI_RESPONSES);
 });
@@ -142,7 +140,7 @@ test("detectFormat identifies OpenAI Responses by max_output_tokens without inpu
   const format = detectFormat({
     model: "gpt-5.1-codex",
     max_output_tokens: 256,
-    stream: false
+    stream: false,
   });
   assert.equal(format, FORMATS.OPENAI_RESPONSES);
 });
@@ -155,7 +153,7 @@ test("translateRequest normalizes openai-responses input string into list payloa
     {
       model: "gpt-5.1-codex",
       input: "hello from responses",
-      stream: false
+      stream: false,
     },
     false
   );
@@ -171,13 +169,13 @@ test("translateRequest normalizes openai-responses input string into list payloa
 test("parseSSEToResponsesOutput parses completed response from SSE payload", () => {
   const rawSSE = [
     "event: response.created",
-    "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"model\":\"gpt-5.1-codex\",\"status\":\"in_progress\",\"output\":[]}}",
+    'data: {"type":"response.created","response":{"id":"resp_1","object":"response","model":"gpt-5.1-codex","status":"in_progress","output":[]}}',
     "",
     "event: response.completed",
-    "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"model\":\"gpt-5.1-codex\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]}],\"usage\":{\"input_tokens\":5,\"output_tokens\":3}}}",
+    'data: {"type":"response.completed","response":{"id":"resp_1","object":"response","model":"gpt-5.1-codex","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":5,"output_tokens":3}}}',
     "",
     "data: [DONE]",
-    ""
+    "",
   ].join("\n");
 
   const parsed = parseSSEToResponsesOutput(rawSSE, "fallback-model");
