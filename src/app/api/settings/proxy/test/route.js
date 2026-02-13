@@ -1,3 +1,7 @@
+import { ProxyAgent, request as undiciRequest } from "undici";
+
+const SUPPORTED_PROXY_TYPES = new Set(["http", "https"]);
+
 /**
  * POST /api/settings/proxy/test — test proxy connectivity
  * Body: { proxy: { type, host, port, username?, password? } }
@@ -14,98 +18,76 @@ export async function POST(request) {
       );
     }
 
-    const proxyType = (proxy.type || "http").toLowerCase();
-    const host = proxy.host;
-    const port = proxy.port;
-    const username = proxy.username || "";
-    const password = proxy.password || "";
-
-    // Build proxy URL
-    let proxyUrl;
-    const auth = username ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@` : "";
-
-    if (proxyType === "socks5") {
-      proxyUrl = `socks5://${auth}${host}:${port}`;
-    } else {
-      proxyUrl = `${proxyType}://${auth}${host}:${port}`;
+    const proxyType = String(proxy.type || "http").toLowerCase();
+    if (proxyType.startsWith("socks")) {
+      return Response.json(
+        {
+          error: {
+            message: "SOCKS/SOCKS5 proxy is not supported in outbound runtime; use HTTP or HTTPS",
+            type: "invalid_request",
+          },
+        },
+        { status: 400 }
+      );
+    }
+    if (!SUPPORTED_PROXY_TYPES.has(proxyType)) {
+      return Response.json(
+        {
+          error: {
+            message: "proxy.type must be http or https",
+            type: "invalid_request",
+          },
+        },
+        { status: 400 }
+      );
     }
 
-    // Dynamic import of proxy agents
-    let agent;
-    try {
-      if (proxyType === "socks5") {
-        const { SocksProxyAgent } = await import("socks-proxy-agent");
-        agent = new SocksProxyAgent(proxyUrl);
-      } else {
-        const { HttpsProxyAgent } = await import("https-proxy-agent");
-        agent = new HttpsProxyAgent(proxyUrl);
-      }
-    } catch (importError) {
-      return Response.json({
-        success: false,
-        error: `Proxy agent not available: ${importError.message}. Install with: npm install https-proxy-agent socks-proxy-agent`,
-      });
-    }
+    const auth = proxy.username
+      ? `${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password || "")}@`
+      : "";
+    const proxyUrl = `${proxyType}://${auth}${proxy.host}:${proxy.port}`;
 
-    // Test connection by fetching public IP
     const startTime = Date.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const dispatcher = new ProxyAgent(proxyUrl);
 
     try {
-      // Use node-fetch or native fetch with agent
-      const http = await import("node:http");
-      const https = await import("node:https");
-
-      const result = await new Promise((resolve, reject) => {
-        const url = new URL("https://api.ipify.org?format=json");
-        const options = {
-          hostname: url.hostname,
-          port: url.port || 443,
-          path: url.pathname + url.search,
-          method: "GET",
-          agent: agent,
-          signal: controller.signal,
-        };
-
-        const req = https.request(options, (res) => {
-          let data = "";
-          res.on("data", (chunk) => { data += chunk; });
-          res.on("end", () => {
-            try {
-              const parsed = JSON.parse(data);
-              resolve(parsed);
-            } catch {
-              resolve({ ip: data.trim() });
-            }
-          });
-        });
-
-        req.on("error", (err) => reject(err));
-        req.end();
+      const result = await undiciRequest("https://api.ipify.org?format=json", {
+        method: "GET",
+        dispatcher,
+        signal: controller.signal,
+        headersTimeout: 10000,
+        bodyTimeout: 10000,
       });
 
-      clearTimeout(timeout);
-      const latencyMs = Date.now() - startTime;
+      const rawBody = await result.body.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(rawBody);
+      } catch {
+        parsed = { ip: rawBody.trim() };
+      }
 
       return Response.json({
         success: true,
-        publicIp: result.ip || null,
-        latencyMs,
-        proxyUrl: `${proxyType}://${host}:${port}`,
+        publicIp: parsed.ip || null,
+        latencyMs: Date.now() - startTime,
+        proxyUrl: `${proxyType}://${proxy.host}:${proxy.port}`,
       });
     } catch (fetchError) {
-      clearTimeout(timeout);
-      const latencyMs = Date.now() - startTime;
-
       return Response.json({
         success: false,
-        error: fetchError.name === "AbortError" 
-          ? "Connection timeout (10s)" 
-          : fetchError.message || "Connection failed",
-        latencyMs,
-        proxyUrl: `${proxyType}://${host}:${port}`,
+        error:
+          fetchError.name === "AbortError"
+            ? "Connection timeout (10s)"
+            : fetchError.message || "Connection failed",
+        latencyMs: Date.now() - startTime,
+        proxyUrl: `${proxyType}://${proxy.host}:${proxy.port}`,
       });
+    } finally {
+      clearTimeout(timeout);
+      await dispatcher.close().catch(() => {});
     }
   } catch (error) {
     return Response.json(

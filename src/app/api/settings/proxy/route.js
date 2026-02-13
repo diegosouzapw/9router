@@ -1,4 +1,71 @@
-import { getProxyConfig, setProxyConfig, getProxyForLevel, deleteProxyForLevel, resolveProxyForConnection } from "@/lib/localDb";
+import {
+  getProxyConfig,
+  setProxyConfig,
+  getProxyForLevel,
+  deleteProxyForLevel,
+  resolveProxyForConnection,
+} from "@/lib/localDb";
+
+const SUPPORTED_PROXY_TYPES = new Set(["http", "https"]);
+
+function createInvalidProxyError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  error.type = "invalid_request";
+  return error;
+}
+
+function normalizeAndValidateProxy(proxy, pathLabel) {
+  if (proxy === null || proxy === undefined) return proxy;
+  if (typeof proxy !== "object" || Array.isArray(proxy)) {
+    throw createInvalidProxyError(`${pathLabel} must be an object`);
+  }
+
+  const type = String(proxy.type || "http").toLowerCase();
+  if (type.startsWith("socks")) {
+    throw createInvalidProxyError(
+      "SOCKS/SOCKS5 proxy is not supported in outbound runtime; use HTTP or HTTPS"
+    );
+  }
+  if (!SUPPORTED_PROXY_TYPES.has(type)) {
+    throw createInvalidProxyError(`${pathLabel}.type must be http or https`);
+  }
+
+  return { ...proxy, type };
+}
+
+function normalizeAndValidateProxyMap(proxyMap, mapName) {
+  if (proxyMap === undefined) return undefined;
+  if (proxyMap === null || typeof proxyMap !== "object" || Array.isArray(proxyMap)) {
+    throw createInvalidProxyError(`${mapName} must be an object`);
+  }
+
+  const normalizedMap = { ...proxyMap };
+  for (const [id, proxy] of Object.entries(proxyMap)) {
+    normalizedMap[id] = normalizeAndValidateProxy(proxy, `${mapName}.${id}`);
+  }
+  return normalizedMap;
+}
+
+function normalizeProxyPayload(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw createInvalidProxyError("Request body must be an object");
+  }
+
+  const normalized = { ...body };
+  if (Object.prototype.hasOwnProperty.call(body, "proxy")) {
+    normalized.proxy = normalizeAndValidateProxy(body.proxy, "proxy");
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "global")) {
+    normalized.global = normalizeAndValidateProxy(body.global, "global");
+  }
+  for (const key of ["providers", "combos", "keys"]) {
+    if (Object.prototype.hasOwnProperty.call(body, key)) {
+      normalized[key] = normalizeAndValidateProxyMap(body[key], key);
+    }
+  }
+  return normalized;
+}
 
 /**
  * GET /api/settings/proxy — get proxy configuration
@@ -42,13 +109,13 @@ export async function GET(request) {
 export async function PUT(request) {
   try {
     const body = await request.json();
-    const updated = await setProxyConfig(body);
+    const normalizedBody = normalizeProxyPayload(body);
+    const updated = await setProxyConfig(normalizedBody);
     return Response.json(updated);
   } catch (error) {
-    return Response.json(
-      { error: { message: error.message, type: "server_error" } },
-      { status: 500 }
-    );
+    const status = Number(error?.status) || 500;
+    const type = error?.type || (status === 400 ? "invalid_request" : "server_error");
+    return Response.json({ error: { message: error.message, type } }, { status });
   }
 }
 

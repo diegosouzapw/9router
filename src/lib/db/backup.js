@@ -5,7 +5,15 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "node:fs";
-import { getDbInstance, resetDbInstance, isBuildPhase, isCloud, SQLITE_FILE, DB_BACKUPS_DIR, DATA_DIR } from "./core.js";
+import {
+  getDbInstance,
+  resetDbInstance,
+  isBuildPhase,
+  isCloud,
+  SQLITE_FILE,
+  DB_BACKUPS_DIR,
+  DATA_DIR,
+} from "./core.js";
 
 // ──────────────── Backup Config ────────────────
 
@@ -28,15 +36,17 @@ export function backupDbFile(reason = "auto") {
 
     // Throttle
     const now = Date.now();
-    if (reason !== "manual" && reason !== "pre-restore" && now - _lastBackupAt < BACKUP_THROTTLE_MS) return null;
+    if (reason !== "manual" && reason !== "pre-restore" && now - _lastBackupAt < BACKUP_THROTTLE_MS)
+      return null;
     _lastBackupAt = now;
 
     const backupDir = DB_BACKUPS_DIR || path.join(DATA_DIR, "db_backups");
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
 
     // Shrink check vs latest backup
-    const existingBackups = fs.readdirSync(backupDir)
-      .filter(f => f.startsWith("db_") && f.endsWith(".sqlite"))
+    const existingBackups = fs
+      .readdirSync(backupDir)
+      .filter((f) => f.startsWith("db_") && f.endsWith(".sqlite"))
       .sort();
     if (existingBackups.length > 0) {
       const latestBackup = existingBackups[existingBackups.length - 1];
@@ -52,14 +62,19 @@ export function backupDbFile(reason = "auto") {
 
     // Use native SQLite backup API for consistency
     const db = getDbInstance();
-    db.backup(backupFile).then(() => {
-      console.log(`[DB] Backup created: ${backupFile} (${stat.size} bytes)`);
-    }).catch(err => {
-      console.error("[DB] Backup failed:", err.message);
-    });
+    db.backup(backupFile)
+      .then(() => {
+        console.log(`[DB] Backup created: ${backupFile} (${stat.size} bytes)`);
+      })
+      .catch((err) => {
+        console.error("[DB] Backup failed:", err.message);
+      });
 
     // Rotation — keep only last N, delete smallest first
-    const files = fs.readdirSync(backupDir).filter(f => f.startsWith("db_") && f.endsWith(".sqlite")).sort();
+    const files = fs
+      .readdirSync(backupDir)
+      .filter((f) => f.startsWith("db_") && f.endsWith(".sqlite"))
+      .sort();
     while (files.length > MAX_DB_BACKUPS) {
       let smallestIdx = 0;
       let smallestSize = Infinity;
@@ -70,9 +85,16 @@ export function backupDbFile(reason = "auto") {
             smallestSize = fStat.size;
             smallestIdx = i;
           }
-        } catch { smallestIdx = i; break; }
+        } catch {
+          smallestIdx = i;
+          break;
+        }
       }
-      try { fs.unlinkSync(path.join(backupDir, files[smallestIdx])); } catch { /* gone */ }
+      try {
+        fs.unlinkSync(path.join(backupDir, files[smallestIdx]));
+      } catch {
+        /* gone */
+      }
       files.splice(smallestIdx, 1);
     }
 
@@ -90,12 +112,13 @@ export async function listDbBackups() {
   try {
     if (!fs.existsSync(backupDir)) return [];
 
-    const entries = fs.readdirSync(backupDir)
-      .filter(f => f.startsWith("db_") && f.endsWith(".sqlite"))
+    const entries = fs
+      .readdirSync(backupDir)
+      .filter((f) => f.startsWith("db_") && f.endsWith(".sqlite"))
       .sort()
       .reverse();
 
-    return entries.map(filename => {
+    return entries.map((filename) => {
       const filePath = path.join(backupDir, filename);
       const stat = fs.statSync(filePath);
       const match = filename.match(/^db_(.+?)_([^.]+)\.sqlite$/);
@@ -107,7 +130,9 @@ export async function listDbBackups() {
         const row = backupDb.prepare("SELECT COUNT(*) as cnt FROM provider_connections").get();
         connectionCount = row?.cnt || 0;
         backupDb.close();
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
       return {
         id: filename,
@@ -155,6 +180,20 @@ export async function restoreDbBackup(backupId) {
 
   // Close and reset current connection
   resetDbInstance();
+
+  // Remove main file and WAL sidecars to avoid stale frame replay after restore.
+  const sqliteFilesToReplace = [
+    SQLITE_FILE,
+    `${SQLITE_FILE}-wal`,
+    `${SQLITE_FILE}-shm`,
+    `${SQLITE_FILE}-journal`,
+  ];
+  for (const filePath of sqliteFilesToReplace) {
+    if (!filePath) continue;
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  }
 
   // Copy backup over current DB
   fs.copyFileSync(backupPath, SQLITE_FILE);
