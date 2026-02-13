@@ -344,13 +344,7 @@ export const REGISTRY = {
     baseUrl: "https://api.openai.com/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "gpt-4o", name: "GPT-4o" },
-      { id: "gpt-4o-mini", name: "GPT-4o Mini" },
-      { id: "gpt-4-turbo", name: "GPT-4 Turbo" },
-      { id: "o1", name: "O1" },
-      { id: "o1-mini", name: "O1 Mini" },
-    ],
+    models: [], // Populated via model sync
   },
 
   anthropic: {
@@ -365,11 +359,7 @@ export const REGISTRY = {
     headers: {
       "Anthropic-Version": "2023-06-01",
     },
-    models: [
-      { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
-      { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
-      { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
-    ],
+    models: [], // Populated via model sync
   },
 
   openrouter: {
@@ -384,9 +374,7 @@ export const REGISTRY = {
       "HTTP-Referer": "https://endpoint-proxy.local",
       "X-Title": "Endpoint Proxy"
     },
-    models: [
-      { id: "auto", name: "Auto (Best Available)" },
-    ],
+    models: [], // Populated via model sync
   },
 
   glm: {
@@ -402,16 +390,7 @@ export const REGISTRY = {
       "Anthropic-Version": "2023-06-01",
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     },
-    models: [
-      { id: "glm-4.7-flash", name: "GLM 4.7 Flash" },
-      { id: "glm-4.7", name: "GLM 4.7" },
-      { id: "glm-4.6v", name: "GLM 4.6V (Vision)" },
-      { id: "glm-4.6", name: "GLM 4.6" },
-      { id: "glm-4.5v", name: "GLM 4.5V (Vision)" },
-      { id: "glm-4.5", name: "GLM 4.5" },
-      { id: "glm-4.5-air", name: "GLM 4.5 Air" },
-      { id: "glm-4-32b", name: "GLM 4 32B" },
-    ],
+    models: [], // Populated via model sync
   },
 
   kimi: {
@@ -422,11 +401,7 @@ export const REGISTRY = {
     baseUrl: "https://api.moonshot.ai/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "kimi-k2.5", name: "Kimi K2.5" },
-      { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
-      { id: "kimi-latest", name: "Kimi Latest" },
-    ],
+    models: [], // Populated via model sync
   },
 
   "kimi-coding": {
@@ -525,9 +500,7 @@ export const REGISTRY = {
       "Anthropic-Version": "2023-06-01",
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     },
-    models: [
-      { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
-    ],
+    models: [], // Populated via model sync
   },
 
   "minimax-cn": {
@@ -557,10 +530,7 @@ export const REGISTRY = {
     baseUrl: "https://api.deepseek.com/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "deepseek-chat", name: "DeepSeek V3.2 Chat" },
-      { id: "deepseek-reasoner", name: "DeepSeek V3.2 Reasoner" },
-    ],
+    models: [], // Populated via model sync
   },
 
   groq: {
@@ -571,12 +541,7 @@ export const REGISTRY = {
     baseUrl: "https://api.groq.com/openai/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
-      { id: "meta-llama/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },
-      { id: "qwen/qwen3-32b", name: "Qwen3 32B" },
-      { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B" },
-    ],
+    models: [], // Populated via model sync
   },
 
   xai: {
@@ -587,12 +552,7 @@ export const REGISTRY = {
     baseUrl: "https://api.x.ai/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "grok-4", name: "Grok 4" },
-      { id: "grok-4-fast-reasoning", name: "Grok 4 Fast Reasoning" },
-      { id: "grok-code-fast-1", name: "Grok Code Fast" },
-      { id: "grok-3", name: "Grok 3" },
-    ],
+    models: [], // Populated via model sync
   },
 
   mistral: {
@@ -603,11 +563,7 @@ export const REGISTRY = {
     baseUrl: "https://api.mistral.ai/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "mistral-large-latest", name: "Mistral Large 3" },
-      { id: "codestral-latest", name: "Codestral" },
-      { id: "mistral-medium-latest", name: "Mistral Medium 3" },
-    ],
+    models: [], // Populated via model sync
   },
 
   perplexity: {
@@ -632,12 +588,7 @@ export const REGISTRY = {
     baseUrl: "https://api.together.xyz/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", name: "Llama 3.3 70B Turbo" },
-      { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1" },
-      { id: "Qwen/Qwen3-235B-A22B", name: "Qwen3 235B" },
-      { id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8", name: "Llama 4 Maverick" },
-    ],
+    models: [], // Populated via model sync
   },
 
   fireworks: {
@@ -648,11 +599,7 @@ export const REGISTRY = {
     baseUrl: "https://api.fireworks.ai/inference/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "accounts/fireworks/models/deepseek-v3p1", name: "DeepSeek V3.1" },
-      { id: "accounts/fireworks/models/llama-v3p3-70b-instruct", name: "Llama 3.3 70B" },
-      { id: "accounts/fireworks/models/qwen3-235b-a22b", name: "Qwen3 235B" },
-    ],
+    models: [], // Populated via model sync
   },
 
   cerebras: {
@@ -663,14 +610,7 @@ export const REGISTRY = {
     baseUrl: "https://api.cerebras.ai/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "gpt-oss-120b", name: "GPT OSS 120B" },
-      { id: "zai-glm-4.7", name: "ZAI GLM 4.7" },
-      { id: "llama-3.3-70b", name: "Llama 3.3 70B" },
-      { id: "llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout" },
-      { id: "qwen-3-235b-a22b-instruct-2507", name: "Qwen3 235B A22B" },
-      { id: "qwen-3-32b", name: "Qwen3 32B" },
-    ],
+    models: [], // Populated via model sync
   },
 
   cohere: {
@@ -681,11 +621,7 @@ export const REGISTRY = {
     baseUrl: "https://api.cohere.com/v2/chat",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "command-r-plus-08-2024", name: "Command R+ (Aug 2024)" },
-      { id: "command-r-08-2024", name: "Command R (Aug 2024)" },
-      { id: "command-a-03-2025", name: "Command A (Mar 2025)" },
-    ],
+    models: [], // Populated via model sync
   },
 
   nvidia: {
@@ -696,14 +632,7 @@ export const REGISTRY = {
     baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "moonshotai/kimi-k2.5", name: "Kimi K2.5" },
-      { id: "z-ai/glm4.7", name: "GLM 4.7" },
-      { id: "deepseek-ai/deepseek-v3.2", name: "DeepSeek V3.2" },
-      { id: "nvidia/llama-3.3-70b-instruct", name: "Llama 3.3 70B" },
-      { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },
-      { id: "deepseek/deepseek-r1", name: "DeepSeek R1" },
-    ],
+    models: [], // Populated via model sync
   },
 
   nebius: {
@@ -714,9 +643,7 @@ export const REGISTRY = {
     baseUrl: "https://api.tokenfactory.nebius.com/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B Instruct" },
-    ],
+    models: [], // Populated via model sync
   },
 
   siliconflow: {
@@ -727,18 +654,7 @@ export const REGISTRY = {
     baseUrl: "https://api.siliconflow.com/v1/chat/completions",
     authType: "apikey",
     authHeader: "bearer",
-    models: [
-      { id: "deepseek-ai/DeepSeek-V3.2", name: "DeepSeek V3.2" },
-      { id: "deepseek-ai/DeepSeek-V3.1", name: "DeepSeek V3.1" },
-      { id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek R1" },
-      { id: "Qwen/Qwen3-235B-A22B-Instruct-2507", name: "Qwen3 235B" },
-      { id: "Qwen/Qwen3-Coder-480B-A35B-Instruct", name: "Qwen3 Coder 480B" },
-      { id: "Qwen/Qwen3-32B", name: "Qwen3 32B" },
-      { id: "moonshotai/Kimi-K2.5", name: "Kimi K2.5" },
-      { id: "zai-org/GLM-4.7", name: "GLM 4.7" },
-      { id: "openai/gpt-oss-120b", name: "GPT OSS 120B" },
-      { id: "baidu/ERNIE-4.5-300B-A47B", name: "ERNIE 4.5 300B" },
-    ],
+    models: [], // Populated via model sync
   },
 };
 

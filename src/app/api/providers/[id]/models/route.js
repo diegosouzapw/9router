@@ -15,6 +15,29 @@ const PROVIDER_MODELS_CONFIG = {
     authHeader: "x-api-key",
     parseResponse: (data) => data.data || []
   },
+  glm: {
+    url: "https://api.z.ai/api/paas/v4/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => data.data || data.models || []
+  },
+  minimax: {
+    url: "https://api.minimax.io/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    authHeader: "x-api-key",
+    parseResponse: (data) => data.data || data.models || []
+  },
+  siliconflow: {
+    url: "https://api.siliconflow.cn/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => data.data || data.models || []
+  },
   gemini: {
     url: "https://generativelanguage.googleapis.com/v1beta/models",
     method: "GET",
@@ -120,14 +143,7 @@ const PROVIDER_MODELS_CONFIG = {
     authPrefix: "Bearer ",
     parseResponse: (data) => data.data || data.models || []
   },
-  perplexity: {
-    url: "https://api.perplexity.ai/models",
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
-    parseResponse: (data) => data.data || data.models || []
-  },
+  // perplexity: No /models API available — uses hardcoded models in registry
   together: {
     url: "https://api.together.xyz/v1/models",
     method: "GET",

@@ -99,11 +99,11 @@ function getMappedModel(model) {
     if (fs.existsSync(SQLITE_FILE)) {
       const Database = require("better-sqlite3");
       const db = new Database(SQLITE_FILE, { readonly: true });
-      const row = db.prepare("SELECT value FROM key_value WHERE key = 'mitmAlias'").get();
+      const row = db.prepare("SELECT value FROM key_value WHERE namespace = 'mitmAlias' AND key = 'antigravity'").get();
       db.close();
       if (row) {
-        const mitmAlias = JSON.parse(row.value);
-        return mitmAlias?.antigravity?.[model] || null;
+        const mappings = JSON.parse(row.value);
+        return mappings?.[model] || null;
       }
     }
   } catch (e) {
