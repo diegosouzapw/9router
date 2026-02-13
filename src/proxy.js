@@ -8,8 +8,13 @@ const SECRET = new TextEncoder().encode(
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
-  // Protect all dashboard routes
+  // Protect all dashboard routes (except onboarding)
   if (pathname.startsWith("/dashboard")) {
+    // Always allow onboarding — it has its own setupComplete guard
+    if (pathname.startsWith("/dashboard/onboarding")) {
+      return NextResponse.next();
+    }
+
     const token = request.cookies.get("auth_token")?.value;
 
     if (token) {
@@ -23,9 +28,15 @@ export async function proxy(request) {
 
     const origin = request.nextUrl.origin;
     try {
-      const res = await fetch(`${origin}/api/settings/require-login`);
+      const res = await fetch(`${origin}/api/settings`);
       const data = await res.json();
+      // Skip auth if login is not required
       if (data.requireLogin === false) {
+        return NextResponse.next();
+      }
+      // Skip auth if no password has been set yet (fresh install)
+      // This prevents an unresolvable loop where requireLogin=true but no password exists
+      if (!data.hasPassword) {
         return NextResponse.next();
       }
     } catch (err) {

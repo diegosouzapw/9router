@@ -65,4 +65,4 @@ fi
 
 echo ""
 echo "🚀 Iniciando npm run dev..."
-npm run dev
+npm run build && npm run start
