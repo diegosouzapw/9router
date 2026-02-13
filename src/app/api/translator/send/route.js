@@ -1,21 +1,36 @@
 import { NextResponse } from "next/server";
-import { buildProviderUrl, buildProviderHeaders } from "open-sse/services/provider.js";
+import { buildProviderUrl, buildProviderHeaders, detectFormat, getTargetFormat } from "open-sse/services/provider.js";
 import { getProviderConnections } from "@/lib/localDb.js";
 import { toJsonErrorPayload } from "@/shared/utils/upstreamError";
+import { logTranslationEvent } from "@/lib/translatorEvents.js";
 
 export async function POST(request) {
   try {
+    const startedAt = Date.now();
     const { provider, body } = await request.json();
 
     if (!provider || !body) {
       return NextResponse.json({ success: false, error: "Provider and body required" }, { status: 400 });
     }
 
+    const sourceFormat = detectFormat(body);
+    const targetFormat = getTargetFormat(provider);
+
     // Get provider credentials from database
     const connections = await getProviderConnections({ provider });
     const connection = connections.find(c => c.isActive !== false);
     
     if (!connection) {
+      logTranslationEvent({
+        provider,
+        model: body.model || "test-model",
+        sourceFormat,
+        targetFormat,
+        status: "error",
+        statusCode: 400,
+        latency: Date.now() - startedAt,
+        endpoint: "/api/translator/send",
+      });
       return NextResponse.json({ 
         success: false, 
         error: `No active connection found for provider: ${provider}. Available connections: ${connections.length}` 
@@ -36,9 +51,7 @@ export async function POST(request) {
       baseUrlIndex: 0,
       baseUrl: connection.providerSpecificData?.baseUrl
     });
-    console.log("🚀 ~ POST ~ url:", url)
     const headers = buildProviderHeaders(provider, credentials, true, body);
-    console.log("🚀 ~ POST ~ headers:", headers)
 
     // Send request to provider
     const response = await fetch(url, {
@@ -49,17 +62,37 @@ export async function POST(request) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.log("🚀 ~ POST ~ errorText:", errorText)
       const normalizedUpstreamError = toJsonErrorPayload(
         errorText,
         `Provider error: ${response.status} ${response.statusText}`
       );
+      logTranslationEvent({
+        provider,
+        model: body.model || "test-model",
+        sourceFormat,
+        targetFormat,
+        status: "error",
+        statusCode: response.status,
+        latency: Date.now() - startedAt,
+        endpoint: "/api/translator/send",
+      });
       return NextResponse.json({ 
         success: false, 
         error: normalizedUpstreamError.error?.message || `Provider error: ${response.status} ${response.statusText}`,
         details: normalizedUpstreamError
       }, { status: response.status });
     }
+
+    logTranslationEvent({
+      provider,
+      model: body.model || "test-model",
+      sourceFormat,
+      targetFormat,
+      status: "success",
+      statusCode: 200,
+      latency: Date.now() - startedAt,
+      endpoint: "/api/translator/send",
+    });
 
     // Return streaming response
     return new Response(response.body, {
