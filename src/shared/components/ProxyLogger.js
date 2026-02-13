@@ -2,44 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Card from "./Card";
-
-// Type badge colors
-const TYPE_COLORS = {
-  http: { bg: "#3B82F6", text: "#fff", label: "HTTP" },
-  https: { bg: "#10B981", text: "#fff", label: "HTTPS" },
-  socks5: { bg: "#8B5CF6", text: "#fff", label: "SOCKS5" },
-};
-
-// Level badge colors
-const LEVEL_COLORS = {
-  key: { bg: "#F59E0B", text: "#000", label: "Key" },
-  combo: { bg: "#8B5CF6", text: "#fff", label: "Combo" },
-  provider: { bg: "#3B82F6", text: "#fff", label: "Provider" },
-  global: { bg: "#6B7280", text: "#fff", label: "Global" },
-  direct: { bg: "#374151", text: "#9CA3AF", label: "Direct" },
-};
-
-// Provider badge colors (reused from RequestLoggerV2)
-const PROVIDER_COLORS = {
-  github: { bg: "#6e40c9", text: "#fff", label: "GitHub" },
-  kiro: { bg: "#FF9900", text: "#000", label: "Kiro" },
-  antigravity: { bg: "#4285F4", text: "#fff", label: "AG" },
-  claude: { bg: "#D97757", text: "#fff", label: "Claude" },
-  codex: { bg: "#10A37F", text: "#fff", label: "Codex" },
-  gemini: { bg: "#34A853", text: "#fff", label: "Gemini" },
-  qwen: { bg: "#6366F1", text: "#fff", label: "Qwen" },
-  iflow: { bg: "#EC4899", text: "#fff", label: "iFlow" },
-  fireworks: { bg: "#F97316", text: "#fff", label: "Fireworks" },
-  kimi: { bg: "#06B6D4", text: "#fff", label: "Kimi" },
-  "gemini-cli": { bg: "#34A853", text: "#fff", label: "Gemini CLI" },
-};
-
-function getStatusStyle(status) {
-  if (status === "success") return { bg: "#059669", text: "#fff" };
-  if (status === "error") return { bg: "#DC2626", text: "#fff" };
-  if (status === "timeout") return { bg: "#D97706", text: "#fff" };
-  return { bg: "#6B7280", text: "#fff" };
-}
+import { TYPE_COLORS, LEVEL_COLORS, PROVIDER_COLORS, getProxyStatusStyle as getStatusStyle } from "@/shared/constants/colors";
+import { formatTime, formatDuration as formatLatency, truncateUrl } from "@/shared/utils/formatting";
 
 const STATUS_FILTERS = [
   { key: "all", label: "All" },
@@ -61,28 +25,6 @@ const COLUMNS = [
 ];
 
 const DEFAULT_VISIBLE = Object.fromEntries(COLUMNS.map(c => [c.key, true]));
-
-function formatTime(isoString) {
-  try {
-    const d = new Date(isoString);
-    return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  } catch { return "-"; }
-}
-
-function formatLatency(ms) {
-  if (!ms) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function truncateUrl(url, max = 50) {
-  if (!url) return "-";
-  try {
-    const parsed = new URL(url);
-    const display = parsed.hostname + parsed.pathname;
-    return display.length > max ? display.slice(0, max) + "…" : display;
-  } catch { return url.length > max ? url.slice(0, max) + "…" : url; }
-}
 
 export default function ProxyLogger() {
   const [logs, setLogs] = useState([]);
