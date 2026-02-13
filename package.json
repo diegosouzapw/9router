@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "test:plan3": "node --test tests/plan3-p0.test.mjs",
     "test": "npm run build",
-    "check": "npm run lint && npm run test"
+    "check": "npm run lint && npm run test",
+    "prepare": "husky"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -43,6 +44,18 @@
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.8.1",
     "tailwindcss": "^4"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,mjs}": [
+      "prettier --write",
+      "eslint --fix --no-error-on-unmatched-pattern"
+    ],
+    "*.{json,md,yml,yaml,css}": [
+      "prettier --write"
+    ]
   }
 }
