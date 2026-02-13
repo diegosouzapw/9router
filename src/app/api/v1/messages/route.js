@@ -1,5 +1,5 @@
 import { handleChat } from "@/sse/handlers/chat.js";
-import { initTranslators } from "open-sse/translator/index.js";
+import { initTranslators } from "@9router/open-sse/translator/index.js";
 
 let initialized = false;
 
@@ -22,8 +22,8 @@ export async function OPTIONS() {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "*"
-    }
+      "Access-Control-Allow-Headers": "*",
+    },
   });
 }
 
@@ -34,4 +34,3 @@ export async function POST(request) {
   await ensureInitialized();
   return await handleChat(request);
 }
-

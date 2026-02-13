@@ -5,7 +5,7 @@ import { syncToCloud } from "@/lib/cloudSync";
 import { validateProviderApiKey } from "@/lib/providers/validation";
 import { getCliRuntimeStatus } from "@/shared/services/cliRuntime";
 // Use the shared open-sse token refresh with built-in dedup/race-condition cache
-import { getAccessToken } from "open-sse/services/tokenRefresh.js";
+import { getAccessToken } from "@9router/open-sse/services/tokenRefresh.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {

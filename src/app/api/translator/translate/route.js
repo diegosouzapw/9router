@@ -1,13 +1,24 @@
 import { NextResponse } from "next/server";
-import { detectFormat, getTargetFormat, buildProviderUrl, buildProviderHeaders } from "open-sse/services/provider.js";
-import { translateRequest } from "open-sse/translator/index.js";
-import { FORMATS } from "open-sse/translator/formats.js";
+import {
+  detectFormat,
+  getTargetFormat,
+  buildProviderUrl,
+  buildProviderHeaders,
+} from "@9router/open-sse/services/provider.js";
+import { translateRequest } from "@9router/open-sse/translator/index.js";
+import { FORMATS } from "@9router/open-sse/translator/formats.js";
 import { getProviderConnections } from "@/lib/localDb.js";
 
 export async function POST(request) {
   try {
     const reqData = await request.json();
-    const { step, provider, body, sourceFormat: reqSourceFormat, targetFormat: reqTargetFormat } = reqData;
+    const {
+      step,
+      provider,
+      body,
+      sourceFormat: reqSourceFormat,
+      targetFormat: reqTargetFormat,
+    } = reqData;
 
     if (!body) {
       return NextResponse.json({ success: false, error: "Body is required" }, { status: 400 });
@@ -21,11 +32,19 @@ export async function POST(request) {
       const tgt = reqTargetFormat || (provider ? getTargetFormat(provider) : "openai");
       const model = body.model || "test-model";
       const translated = translateRequest(src, tgt, model, body, true, null, provider);
-      return NextResponse.json({ success: true, sourceFormat: src, targetFormat: tgt, result: translated });
+      return NextResponse.json({
+        success: true,
+        sourceFormat: src,
+        targetFormat: tgt,
+        result: translated,
+      });
     }
 
     if (!step || !provider) {
-      return NextResponse.json({ success: false, error: "Step and provider are required" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Step and provider are required" },
+        { status: 400 }
+      );
     }
 
     switch (step) {
@@ -34,13 +53,13 @@ export async function POST(request) {
         // Return format: { timestamp, endpoint, headers, body }
         const actualBody = body.body || body;
         const sourceFormat = detectFormat(actualBody);
-        
+
         result = {
           timestamp: body.timestamp || new Date().toISOString(),
           endpoint: body.endpoint || "/v1/messages",
           headers: body.headers || {},
           body: actualBody,
-          _detectedFormat: sourceFormat
+          _detectedFormat: sourceFormat,
         };
         break;
       }
@@ -52,12 +71,20 @@ export async function POST(request) {
         const sourceFormat = detectFormat(actualBody);
         const targetFormat = FORMATS.OPENAI;
         const model = actualBody.model || "test-model";
-        const translated = translateRequest(sourceFormat, targetFormat, model, actualBody, true, null, provider);
-        
+        const translated = translateRequest(
+          sourceFormat,
+          targetFormat,
+          model,
+          actualBody,
+          true,
+          null,
+          provider
+        );
+
         result = {
           timestamp: new Date().toISOString(),
           headers: {},
-          body: translated
+          body: translated,
         };
         break;
       }
@@ -69,11 +96,19 @@ export async function POST(request) {
         const sourceFormat = FORMATS.OPENAI;
         const targetFormat = getTargetFormat(provider);
         const model = actualBody.model || "test-model";
-        const translated = translateRequest(sourceFormat, targetFormat, model, actualBody, true, null, provider);
-        
+        const translated = translateRequest(
+          sourceFormat,
+          targetFormat,
+          model,
+          actualBody,
+          true,
+          null,
+          provider
+        );
+
         result = {
           timestamp: new Date().toISOString(),
-          body: translated
+          body: translated,
         };
         break;
       }
@@ -83,16 +118,19 @@ export async function POST(request) {
         // Return format: { timestamp, url, headers, body }
         const actualBody = body.body || body;
         const model = actualBody.model || "test-model";
-        
+
         // Get provider credentials
         const connections = await getProviderConnections({ provider });
-        const connection = connections.find(c => c.isActive !== false);
-        
+        const connection = connections.find((c) => c.isActive !== false);
+
         if (!connection) {
-          return NextResponse.json({ 
-            success: false, 
-            error: `No active connection found for provider: ${provider}` 
-          }, { status: 400 });
+          return NextResponse.json(
+            {
+              success: false,
+              error: `No active connection found for provider: ${provider}`,
+            },
+            { status: 400 }
+          );
         }
 
         const credentials = {
@@ -101,21 +139,21 @@ export async function POST(request) {
           refreshToken: connection.refreshToken,
           copilotToken: connection.copilotToken,
           projectId: connection.projectId,
-          providerSpecificData: connection.providerSpecificData
+          providerSpecificData: connection.providerSpecificData,
         };
 
         // Build URL and headers
         const url = buildProviderUrl(provider, model, true, {
           baseUrlIndex: 0,
-          baseUrl: connection.providerSpecificData?.baseUrl
+          baseUrl: connection.providerSpecificData?.baseUrl,
         });
         const headers = buildProviderHeaders(provider, credentials, true, actualBody);
-        
+
         result = {
           timestamp: new Date().toISOString(),
           url: url,
           headers: headers,
-          body: actualBody
+          body: actualBody,
         };
         break;
       }

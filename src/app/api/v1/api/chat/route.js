@@ -1,6 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
-import { initTranslators } from "open-sse/translator/index.js";
-import { transformToOllama } from "open-sse/utils/ollamaTransform.js";
+import { initTranslators } from "@9router/open-sse/translator/index.js";
+import { transformToOllama } from "@9router/open-sse/utils/ollamaTransform.js";
 
 let initialized = false;
 
@@ -17,14 +17,14 @@ export async function OPTIONS() {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "*"
-    }
+      "Access-Control-Allow-Headers": "*",
+    },
   });
 }
 
 export async function POST(request) {
   await ensureInitialized();
-  
+
   const clonedReq = request.clone();
   let modelName = "llama3.2";
   try {
@@ -35,4 +35,3 @@ export async function POST(request) {
   const response = await handleChat(request);
   return transformToOllama(response, modelName);
 }
-

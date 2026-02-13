@@ -1,8 +1,8 @@
-import { errorResponse } from "open-sse/utils/error.js";
-import { HTTP_STATUS } from "open-sse/config/constants.js";
-import { getRegistryEntry } from "open-sse/config/providerRegistry.js";
+import { errorResponse } from "@9router/open-sse/utils/error.js";
+import { HTTP_STATUS } from "@9router/open-sse/config/constants.js";
+import { getRegistryEntry } from "@9router/open-sse/config/providerRegistry.js";
 import { getProviderCredentials, extractApiKey, isValidApiKey } from "@/sse/services/auth.js";
-import { handleEmbedding } from "open-sse/handlers/embeddings.js";
+import { handleEmbedding } from "@9router/open-sse/handlers/embeddings.js";
 import * as log from "@/sse/utils/logger.js";
 
 /**

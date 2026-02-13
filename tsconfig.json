@@ -16,8 +16,8 @@
     "incremental": true,
     "paths": {
       "@/*": ["./src/*"],
-      "open-sse": ["./open-sse"],
-      "open-sse/*": ["./open-sse/*"]
+      "@9router/open-sse": ["./open-sse"],
+      "@9router/open-sse/*": ["./open-sse/*"]
     },
     "plugins": [
       {

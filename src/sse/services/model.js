@@ -1,6 +1,10 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
-import { parseModel, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
+import {
+  parseModel,
+  resolveModelAliasFromMap,
+  getModelInfoCore,
+} from "@9router/open-sse/services/model.js";
 
 export { parseModel };
 
@@ -60,5 +64,5 @@ export async function getCombo(modelStr) {
 export async function getComboModels(modelStr) {
   const combo = await getCombo(modelStr);
   if (!combo) return null;
-  return combo.models.map(m => typeof m === "string" ? m : m.model);
+  return combo.models.map((m) => (typeof m === "string" ? m : m.model));
 }

@@ -1,7 +1,7 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getMachineId } from "@/shared/utils/machine";
-import { getUsageForProvider } from "open-sse/services/usage.js";
-import { getExecutor } from "open-sse/executors/index.js";
+import { getUsageForProvider } from "@9router/open-sse/services/usage.js";
+import { getExecutor } from "@9router/open-sse/executors/index.js";
 import { syncToCloud } from "@/lib/cloudSync";
 
 /**

@@ -1,9 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  transpilePackages: ["@9router/open-sse"],
   allowedDevOrigins: ["192.168.*"],
   output: "standalone",
   images: {
-    unoptimized: true
+    unoptimized: true,
   },
   env: {
     NEXT_PUBLIC_CLOUD_URL: "https://9router.com",
@@ -23,38 +24,38 @@ const nextConfig = {
     return [
       {
         source: "/chat/completions",
-        destination: "/api/v1/chat/completions"
+        destination: "/api/v1/chat/completions",
       },
       {
         source: "/responses",
-        destination: "/api/v1/responses"
+        destination: "/api/v1/responses",
       },
       {
         source: "/models",
-        destination: "/api/v1/models"
+        destination: "/api/v1/models",
       },
       {
         source: "/v1/v1/:path*",
-        destination: "/api/v1/:path*"
+        destination: "/api/v1/:path*",
       },
       {
         source: "/v1/v1",
-        destination: "/api/v1"
+        destination: "/api/v1",
       },
       {
         source: "/codex/:path*",
-        destination: "/api/v1/responses"
+        destination: "/api/v1/responses",
       },
       {
         source: "/v1/:path*",
-        destination: "/api/v1/:path*"
+        destination: "/api/v1/:path*",
       },
       {
         source: "/v1",
-        destination: "/api/v1"
-      }
+        destination: "/api/v1",
+      },
     ];
-  }
+  },
 };
 
 export default nextConfig;

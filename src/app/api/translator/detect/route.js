@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { detectFormat } from "open-sse/services/provider.js";
+import { detectFormat } from "@9router/open-sse/services/provider.js";
 
 /**
  * POST /api/translator/detect
@@ -26,9 +26,6 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error("Error detecting format:", error);
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

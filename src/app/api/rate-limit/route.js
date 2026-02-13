@@ -5,7 +5,7 @@ import {
   disableRateLimitProtection,
   getRateLimitStatus,
   getAllRateLimitStatus,
-} from "../../../../open-sse/services/rateLimitManager.js";
+} from "@9router/open-sse/services/rateLimitManager.js";
 
 /**
  * GET /api/rate-limit — Get rate limit status for all connections
@@ -13,7 +13,7 @@ import {
 export async function GET() {
   try {
     const connections = await getProviderConnections();
-    const statuses = connections.map(conn => ({
+    const statuses = connections.map((conn) => ({
       connectionId: conn.id,
       provider: conn.provider,
       name: conn.name || conn.email || conn.id.slice(0, 8),

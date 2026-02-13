@@ -1,8 +1,8 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getAllCustomModels } from "@/lib/localDb";
-import { getAllEmbeddingModels } from "open-sse/config/embeddingRegistry.js";
-import { getAllImageModels } from "open-sse/config/imageRegistry.js";
+import { getAllEmbeddingModels } from "@9router/open-sse/config/embeddingRegistry.js";
+import { getAllImageModels } from "@9router/open-sse/config/imageRegistry.js";
 
 const FALLBACK_ALIAS_TO_PROVIDER = {
   ag: "antigravity",
@@ -99,7 +99,7 @@ export async function GET() {
     try {
       connections = await getProviderConnections();
       // Filter to only active connections
-      connections = connections.filter(c => c.isActive !== false);
+      connections = connections.filter((c) => c.isActive !== false);
     } catch (e) {
       // If database not available, return all models
       console.log("Could not fetch providers, returning all models");
@@ -144,7 +144,11 @@ export async function GET() {
       const canonicalProviderId = FALLBACK_ALIAS_TO_PROVIDER[alias] || providerId;
 
       // If we have active providers, only include those; otherwise include all
-      if (connections.length > 0 && !activeAliases.has(alias) && !activeAliases.has(canonicalProviderId)) {
+      if (
+        connections.length > 0 &&
+        !activeAliases.has(alias) &&
+        !activeAliases.has(canonicalProviderId)
+      ) {
         continue;
       }
 
@@ -207,12 +211,17 @@ export async function GET() {
         const alias = providerIdToAlias[providerId] || providerId;
         const canonicalProviderId = FALLBACK_ALIAS_TO_PROVIDER[alias] || providerId;
         // Only include if provider is active (or no connections configured)
-        if (connections.length > 0 && !activeAliases.has(alias) && !activeAliases.has(canonicalProviderId)) continue;
+        if (
+          connections.length > 0 &&
+          !activeAliases.has(alias) &&
+          !activeAliases.has(canonicalProviderId)
+        )
+          continue;
 
         for (const model of providerCustomModels) {
           // Skip if already added as built-in
           const aliasId = `${alias}/${model.id}`;
-          if (models.some(m => m.id === aliasId)) continue;
+          if (models.some((m) => m.id === aliasId)) continue;
 
           models.push({
             id: aliasId,
@@ -227,7 +236,7 @@ export async function GET() {
 
           if (canonicalProviderId !== alias) {
             const providerPrefixedId = `${canonicalProviderId}/${model.id}`;
-            if (models.some(m => m.id === providerPrefixedId)) continue;
+            if (models.some((m) => m.id === providerPrefixedId)) continue;
             models.push({
               id: providerPrefixedId,
               object: "model",
@@ -245,14 +254,17 @@ export async function GET() {
       console.log("Could not fetch custom models");
     }
 
-    return Response.json({
-      object: "list",
-      data: models,
-    }, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
+    return Response.json(
+      {
+        object: "list",
+        data: models,
       },
-    });
+      {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    );
   } catch (error) {
     console.log("Error fetching models:", error);
     return Response.json(
