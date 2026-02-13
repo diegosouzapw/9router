@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById, updateProviderConnection, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 import { validateProviderApiKey } from "@/lib/providers/validation";
 import { getCliRuntimeStatus } from "@/shared/services/cliRuntime";
 // Use the shared open-sse token refresh with built-in dedup/race-condition cache
@@ -39,7 +39,7 @@ const OAUTH_TEST_CONFIG = {
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    extraHeaders: { "User-Agent": "9Router", "Accept": "application/vnd.github+json" },
+    extraHeaders: { "User-Agent": "9Router", Accept: "application/vnd.github+json" },
   },
   iflow: {
     url: "https://iflow.cn/api/oauth/getUserInfo",
@@ -141,7 +141,12 @@ function classifyFailure({ error, statusCode = null, refreshFailed = false, unsu
     normalized.includes("unauthorized") ||
     normalized.includes("forbidden")
   ) {
-    return makeDiagnosis("upstream_auth_error", "upstream", message, numericStatus ? String(numericStatus) : "auth_failed");
+    return makeDiagnosis(
+      "upstream_auth_error",
+      "upstream",
+      message,
+      numericStatus ? String(numericStatus) : "auth_failed"
+    );
   }
 
   if (
@@ -149,7 +154,12 @@ function classifyFailure({ error, statusCode = null, refreshFailed = false, unsu
     normalized.includes("quota") ||
     normalized.includes("too many requests")
   ) {
-    return makeDiagnosis("upstream_rate_limited", "upstream", message, numericStatus ? String(numericStatus) : "rate_limited");
+    return makeDiagnosis(
+      "upstream_rate_limited",
+      "upstream",
+      message,
+      numericStatus ? String(numericStatus) : "rate_limited"
+    );
   }
 
   if (
@@ -163,7 +173,12 @@ function classifyFailure({ error, statusCode = null, refreshFailed = false, unsu
     return makeDiagnosis("network_error", "upstream", message, "network_error");
   }
 
-  return makeDiagnosis("upstream_error", "upstream", message, numericStatus ? String(numericStatus) : "upstream_error");
+  return makeDiagnosis(
+    "upstream_error",
+    "upstream",
+    message,
+    numericStatus ? String(numericStatus) : "upstream_error"
+  );
 }
 
 async function getProviderRuntimeStatus(provider) {
@@ -182,7 +197,12 @@ async function getProviderRuntimeStatus(provider) {
 
     return {
       ...runtime,
-      diagnosis: makeDiagnosis("runtime_error", "local", runtimeMessage, runtime.reason || "runtime_error"),
+      diagnosis: makeDiagnosis(
+        "runtime_error",
+        "local",
+        runtimeMessage,
+        runtime.reason || "runtime_error"
+      ),
       error: runtimeMessage,
     };
   } catch (error) {
@@ -358,7 +378,12 @@ async function testOAuthConnection(connection) {
 
     // If 401/403 and we haven't tried refresh yet, try refresh now
     // (attempt refresh for ANY provider with a refreshToken, not just those marked refreshable)
-    if ((res.status === 401 || res.status === 403) && !refreshed && connection.refreshToken && typeof connection.refreshToken === "string") {
+    if (
+      (res.status === 401 || res.status === 403) &&
+      !refreshed &&
+      connection.refreshToken &&
+      typeof connection.refreshToken === "string"
+    ) {
       const tokens = await refreshOAuthToken(connection);
       if (tokens) {
         // Retry with new token
@@ -399,11 +424,12 @@ async function testOAuthConnection(connection) {
       };
     }
 
-    const error = res.status === 401
-      ? "Token invalid or revoked"
-      : res.status === 403
-        ? "Access denied"
-        : `API returned ${res.status}`;
+    const error =
+      res.status === 401
+        ? "Token invalid or revoked"
+        : res.status === 403
+          ? "Access denied"
+          : `API returned ${res.status}`;
 
     return {
       valid: false,
@@ -451,7 +477,7 @@ async function testApiKeyConnection(connection) {
     };
   }
 
-  const error = result.valid ? null : (result.error || "Invalid API key");
+  const error = result.valid ? null : result.error || "Invalid API key";
   const diagnosis = result.valid
     ? makeDiagnosis("ok", "upstream", null, null)
     : classifyFailure({ error });
@@ -494,9 +520,11 @@ export async function POST(request, { params }) {
 
     // Build update data
     const now = new Date().toISOString();
-    const diagnosis = result.diagnosis || (result.valid
-      ? makeDiagnosis("ok", "local", null, null)
-      : classifyFailure({ error: result.error, statusCode: result.statusCode }));
+    const diagnosis =
+      result.diagnosis ||
+      (result.valid
+        ? makeDiagnosis("ok", "local", null, null)
+        : classifyFailure({ error: result.error, statusCode: result.statusCode }));
 
     const updateData = {
       testStatus: result.valid ? "active" : "error",
@@ -505,7 +533,7 @@ export async function POST(request, { params }) {
       lastTested: now,
       lastErrorType: result.valid ? null : diagnosis.type,
       lastErrorSource: result.valid ? null : diagnosis.source,
-      errorCode: result.valid ? null : (diagnosis.code || result.statusCode || null),
+      errorCode: result.valid ? null : diagnosis.code || result.statusCode || null,
       rateLimitedUntil: result.valid ? null : connection.rateLimitedUntil || null,
     };
 
@@ -520,7 +548,9 @@ export async function POST(request, { params }) {
         updateData.refreshToken = result.newTokens.refreshToken;
       }
       if (result.newTokens.expiresIn) {
-        updateData.expiresAt = new Date(Date.now() + result.newTokens.expiresIn * 1000).toISOString();
+        updateData.expiresAt = new Date(
+          Date.now() + result.newTokens.expiresIn * 1000
+        ).toISOString();
       }
     }
 

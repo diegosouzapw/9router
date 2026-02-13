@@ -47,6 +47,7 @@ export default function Toggle({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={!label ? (description || "Toggle") : undefined}
         disabled={disabled}
         onClick={handleClick}
         className={cn(
@@ -61,6 +62,7 @@ export default function Toggle({
         )}
       >
         <span
+          aria-hidden="true"
           className={cn(
             "pointer-events-none inline-block rounded-full bg-white shadow-sm",
             "transform transition duration-200 ease-in-out",

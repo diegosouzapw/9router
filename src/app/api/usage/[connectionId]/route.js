@@ -2,7 +2,7 @@ import { getProviderConnectionById, updateProviderConnection } from "@/lib/local
 import { getMachineId } from "@/shared/utils/machine";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 
 /**
  * Sync to cloud if enabled
@@ -23,7 +23,7 @@ async function syncToCloudIfEnabled() {
  */
 async function refreshAndUpdateCredentials(connection) {
   const executor = getExecutor(connection.provider);
-  
+
   // Build credentials object from connection
   const credentials = {
     accessToken: connection.accessToken,
@@ -37,7 +37,7 @@ async function refreshAndUpdateCredentials(connection) {
 
   // Check if refresh is needed
   const needsRefresh = executor.needsRefresh(credentials);
-  
+
   if (!needsRefresh) {
     return { connection, refreshed: false };
   }
@@ -93,7 +93,7 @@ async function refreshAndUpdateCredentials(connection) {
     ...connection,
     ...updateData,
   };
-  
+
   return {
     connection: updatedConnection,
     refreshed: true,
@@ -106,7 +106,7 @@ async function refreshAndUpdateCredentials(connection) {
 export async function GET(request, { params }) {
   try {
     const { connectionId } = await params;
-    
+
     // Get connection from database
     let connection = await getProviderConnectionById(connectionId);
     if (!connection) {
@@ -124,16 +124,19 @@ export async function GET(request, { params }) {
       const result = await refreshAndUpdateCredentials(connection);
       connection = result.connection;
       refreshed = result.refreshed;
-      
+
       // Sync to cloud only if token was refreshed
       if (refreshed) {
         await syncToCloudIfEnabled();
       }
     } catch (refreshError) {
       console.error("[Usage API] Credential refresh failed:", refreshError);
-      return Response.json({ 
-        error: `Credential refresh failed: ${refreshError.message}` 
-      }, { status: 401 });
+      return Response.json(
+        {
+          error: `Credential refresh failed: ${refreshError.message}`,
+        },
+        { status: 401 }
+      );
     }
 
     // Fetch usage from provider API

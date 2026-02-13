@@ -1,75 +1,49 @@
-// Logger utility for cloud
+/**
+ * SSE Logger — Thin wrapper around the shared Pino logger
+ * for backward compatibility with existing SSE code.
+ *
+ * Migrated from console.log to structured Pino logging.
+ */
+import { createLogger, logger as rootLogger } from "@/shared/utils/logger";
 
-const LOG_LEVELS = {
-  DEBUG: 0,
-  INFO: 1,
-  WARN: 2,
-  ERROR: 3
-};
-
-const LEVEL = LOG_LEVELS.DEBUG;
-
-function formatTime() {
-  return new Date().toLocaleTimeString("en-US", { hour12: false });
-}
-
-function formatData(data) {
-  if (!data) return "";
-  if (typeof data === "string") return data;
-  try {
-    return JSON.stringify(data);
-  } catch {
-    return String(data);
-  }
-}
+const log = createLogger("sse");
 
 export function debug(tag, message, data) {
-  if (LEVEL <= LOG_LEVELS.DEBUG) {
-    const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(`[${formatTime()}] 🔍 [${tag}] ${message}${dataStr}`);
-  }
+  log.debug({ tag, ...spreadData(data) }, message);
 }
 
 export function info(tag, message, data) {
-  if (LEVEL <= LOG_LEVELS.INFO) {
-    const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(`[${formatTime()}] ℹ️  [${tag}] ${message}${dataStr}`);
-  }
+  log.info({ tag, ...spreadData(data) }, message);
 }
 
 export function warn(tag, message, data) {
-  if (LEVEL <= LOG_LEVELS.WARN) {
-    const dataStr = data ? ` ${formatData(data)}` : "";
-    // console.warn(`[${formatTime()}] ⚠️  [${tag}] ${message}${dataStr}`);
-  }
+  log.warn({ tag, ...spreadData(data) }, message);
 }
 
 export function error(tag, message, data) {
-  if (LEVEL <= LOG_LEVELS.ERROR) {
-    const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(`[${formatTime()}] ❌ [${tag}] ${message}${dataStr}`);
-  }
+  log.error({ tag, ...spreadData(data) }, message);
 }
 
 export function request(method, path, extra) {
-  const dataStr = extra ? ` ${formatData(extra)}` : "";
-  console.log(`\x1b[36m[${formatTime()}] 📥 ${method} ${path}${dataStr}\x1b[0m`);
+  log.info({ tag: "HTTP", method, path, ...spreadData(extra) }, `📥 ${method} ${path}`);
 }
 
 export function response(status, duration, extra) {
-  const icon = status < 400 ? "📤" : "💥";
-  const dataStr = extra ? ` ${formatData(extra)}` : "";
-  console.log(`[${formatTime()}] ${icon} ${status} (${duration}ms)${dataStr}`);
+  const level = status < 400 ? "info" : "error";
+  log[level]({ tag: "HTTP", status, duration, ...spreadData(extra) }, `📤 ${status} (${duration}ms)`);
 }
 
 export function stream(event, data) {
-  const dataStr = data ? ` ${formatData(data)}` : "";
-  console.log(`[${formatTime()}] 🌊 [STREAM] ${event}${dataStr}`);
+  log.debug({ tag: "STREAM", event, ...spreadData(data) }, `🌊 ${event}`);
 }
 
-// Mask sensitive data
-export function maskKey(key) {
-  if (!key || key.length < 8) return "***";
-  return `${key.slice(0, 4)}...${key.slice(-4)}`;
-}
+// Mask sensitive data (kept for backward compat; prefer shared maskKey)
+export { maskKey } from "@/shared/utils/formatting";
 
+// Helper to spread data into structured fields
+function spreadData(data) {
+  if (!data) return {};
+  if (typeof data === "string") return { detail: data };
+  if (typeof data === "object") return data;
+  return { detail: String(data) };
+}

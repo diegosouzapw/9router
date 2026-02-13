@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 import { createComboSchema, validateBody } from "@/shared/validation/schemas";
 import { validateComboDAG } from "open-sse/services/combo.js";
 

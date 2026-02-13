@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 import { createKeySchema, validateBody } from "@/shared/validation/schemas";
 
 // GET /api/keys - List API keys
@@ -34,12 +34,15 @@ export async function POST(request) {
     // Auto sync to Cloud if enabled
     await syncKeysToCloudIfEnabled();
 
-    return NextResponse.json({
-      key: apiKey.key,
-      name: apiKey.name,
-      id: apiKey.id,
-      machineId: apiKey.machineId,
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        key: apiKey.key,
+        name: apiKey.name,
+        id: apiKey.id,
+        machineId: apiKey.machineId,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.log("Error creating key:", error);
     return NextResponse.json({ error: "Failed to create key" }, { status: 500 });

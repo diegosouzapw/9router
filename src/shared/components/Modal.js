@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useId } from "react";
 import { cn } from "@/shared/utils/cn";
 import Button from "./Button";
 
@@ -15,6 +15,9 @@ export default function Modal({
   showCloseButton = true,
   className,
 }) {
+  const titleId = useId();
+  const dialogRef = useRef(null);
+
   const sizes = {
     sm: "max-w-sm",
     md: "max-w-md",
@@ -46,6 +49,41 @@ export default function Modal({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [isOpen, onClose]);
 
+  // Focus trap
+  useEffect(() => {
+    if (!isOpen || !dialogRef.current) return;
+
+    const dialog = dialogRef.current;
+    const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+    // Focus first focusable element
+    const firstFocusable = dialog.querySelector(focusableSelector);
+    if (firstFocusable) {
+      setTimeout(() => firstFocusable.focus(), 50);
+    }
+
+    const handleTab = (e) => {
+      if (e.key !== "Tab") return;
+
+      const focusable = [...dialog.querySelectorAll(focusableSelector)];
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    dialog.addEventListener("keydown", handleTab);
+    return () => dialog.removeEventListener("keydown", handleTab);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -54,10 +92,15 @@ export default function Modal({
       <div
         className="absolute inset-0 bg-black/30 backdrop-blur-sm"
         onClick={closeOnOverlay ? onClose : undefined}
+        aria-hidden="true"
       />
 
       {/* Modal content */}
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
         className={cn(
           "relative w-full bg-surface",
           "border border-black/10 dark:border-white/10",
@@ -71,13 +114,13 @@ export default function Modal({
         {(title || showCloseButton) && (
           <div className="flex items-center justify-between p-6 border-b border-black/5 dark:border-white/5">
             <div className="flex items-center">
-              <div className="flex items-center gap-2 mr-4">
+              <div className="flex items-center gap-2 mr-4" aria-hidden="true">
                 <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
                 <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
                 <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
               </div>
               {title && (
-                <h2 className="text-lg font-semibold text-text-main">
+                <h2 id={titleId} className="text-lg font-semibold text-text-main">
                   {title}
                 </h2>
               )}
@@ -85,9 +128,10 @@ export default function Modal({
             {showCloseButton && (
               <button
                 onClick={onClose}
+                aria-label="Close"
                 className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
               >
-                <span className="material-symbols-outlined text-[20px]">close</span>
+                <span className="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
               </button>
             )}
           </div>
@@ -140,4 +184,3 @@ export function ConfirmModal({
     </Modal>
   );
 }
-

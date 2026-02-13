@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getModelAliases, setModelAlias, deleteModelAlias, isCloudEnabled } from "@/models";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 
 // GET /api/models/alias - Get all aliases
 export async function GET() {

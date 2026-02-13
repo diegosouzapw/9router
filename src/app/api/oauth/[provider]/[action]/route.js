@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { 
-  getProvider, 
-  generateAuthData, 
-  exchangeTokens, 
-  requestDeviceCode, 
-  pollForToken 
+import {
+  getProvider,
+  generateAuthData,
+  exchangeTokens,
+  requestDeviceCode,
+  pollForToken,
 } from "@/lib/oauth/providers";
 import { createProviderConnection, isCloudEnabled } from "@/models";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 import { startLocalServer } from "@/lib/oauth/utils/server";
 
 // Use globalThis to persist callback server state across Next.js HMR reloads
@@ -37,11 +37,14 @@ export async function GET(request, { params }) {
     if (action === "device-code") {
       const providerData = getProvider(provider);
       if (providerData.flowType !== "device_code") {
-        return NextResponse.json({ error: "Provider does not support device code flow" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Provider does not support device code flow" },
+          { status: 400 }
+        );
       }
 
       const authData = generateAuthData(provider, null);
-      
+
       // For providers that don't use PKCE (like GitHub), don't pass codeChallenge
       let deviceData;
       if (provider === "github" || provider === "kiro" || provider === "kilocode") {
@@ -75,12 +78,19 @@ export async function GET(request, { params }) {
  */
 async function handleStartCallbackServer(provider, searchParams) {
   if (provider !== "codex") {
-    return NextResponse.json({ error: "Callback server only supported for codex" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Callback server only supported for codex" },
+      { status: 400 }
+    );
   }
 
   // Clean up existing server if any
   if (globalThis.__codexCallbackState?.close) {
-    try { globalThis.__codexCallbackState.close(); } catch (e) { /* ignore */ }
+    try {
+      globalThis.__codexCallbackState.close();
+    } catch (e) {
+      /* ignore */
+    }
   }
   globalThis.__codexCallbackState = null;
 
@@ -109,7 +119,11 @@ async function handleStartCallbackServer(provider, searchParams) {
     const startedAt = Date.now();
     setTimeout(() => {
       if (globalThis.__codexCallbackState?.startedAt === startedAt) {
-        try { close(); } catch (e) { /* ignore */ }
+        try {
+          close();
+        } catch (e) {
+          /* ignore */
+        }
         globalThis.__codexCallbackState = null;
       }
     }, 300000);
@@ -147,8 +161,8 @@ export async function POST(request, { params }) {
         provider,
         authType: "oauth",
         ...tokenData,
-        expiresAt: tokenData.expiresIn 
-          ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() 
+        expiresAt: tokenData.expiresIn
+          ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
           : null,
         testStatus: "active",
       });
@@ -156,14 +170,14 @@ export async function POST(request, { params }) {
       // Auto sync to Cloud if enabled
       await syncToCloudIfEnabled();
 
-      return NextResponse.json({ 
-        success: true, 
+      return NextResponse.json({
+        success: true,
         connection: {
           id: connection.id,
           provider: connection.provider,
           email: connection.email,
           displayName: connection.displayName,
-        }
+        },
       });
     }
 
@@ -195,8 +209,8 @@ export async function POST(request, { params }) {
           provider,
           authType: "oauth",
           ...result.tokens,
-          expiresAt: result.tokens.expiresIn 
-            ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString() 
+          expiresAt: result.tokens.expiresIn
+            ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString()
             : null,
           testStatus: "active",
         });
@@ -204,18 +218,19 @@ export async function POST(request, { params }) {
         // Auto sync to Cloud if enabled
         await syncToCloudIfEnabled();
 
-        return NextResponse.json({ 
-          success: true, 
+        return NextResponse.json({
+          success: true,
           connection: {
             id: connection.id,
             provider: connection.provider,
-          }
+          },
         });
       }
 
       // Still pending or error - don't create connection for pending states
-      const isPending = result.pending || result.error === "authorization_pending" || result.error === "slow_down";
-      
+      const isPending =
+        result.pending || result.error === "authorization_pending" || result.error === "slow_down";
+
       return NextResponse.json({
         success: false,
         error: result.error,
@@ -227,11 +242,18 @@ export async function POST(request, { params }) {
     if (action === "poll-callback") {
       // Poll for Codex callback server result
       if (provider !== "codex") {
-        return NextResponse.json({ error: "poll-callback only supported for codex" }, { status: 400 });
+        return NextResponse.json(
+          { error: "poll-callback only supported for codex" },
+          { status: 400 }
+        );
       }
 
       if (!globalThis.__codexCallbackState) {
-        return NextResponse.json({ success: false, error: "no_server", errorDescription: "Callback server not running" });
+        return NextResponse.json({
+          success: false,
+          error: "no_server",
+          errorDescription: "Callback server not running",
+        });
       }
 
       if (!globalThis.__codexCallbackState.callbackParams) {
@@ -243,20 +265,38 @@ export async function POST(request, { params }) {
       const { redirectUri, codeVerifier, close } = globalThis.__codexCallbackState;
 
       // Clean up server
-      try { close(); } catch (e) { /* ignore */ }
+      try {
+        close();
+      } catch (e) {
+        /* ignore */
+      }
       globalThis.__codexCallbackState = null;
 
       if (params.error) {
-        return NextResponse.json({ success: false, error: params.error, errorDescription: params.error_description });
+        return NextResponse.json({
+          success: false,
+          error: params.error,
+          errorDescription: params.error_description,
+        });
       }
 
       if (!params.code) {
-        return NextResponse.json({ success: false, error: "no_code", errorDescription: "No authorization code received" });
+        return NextResponse.json({
+          success: false,
+          error: "no_code",
+          errorDescription: "No authorization code received",
+        });
       }
 
       try {
         // Exchange code for tokens
-        const tokenData = await exchangeTokens(provider, params.code, redirectUri, codeVerifier, params.state);
+        const tokenData = await exchangeTokens(
+          provider,
+          params.code,
+          redirectUri,
+          codeVerifier,
+          params.state
+        );
 
         // Save to database
         const connection = await createProviderConnection({
@@ -278,7 +318,7 @@ export async function POST(request, { params }) {
             provider: connection.provider,
             email: connection.email,
             displayName: connection.displayName,
-          }
+          },
         });
       } catch (exchangeErr) {
         return NextResponse.json({ success: false, error: exchangeErr.message }, { status: 500 });

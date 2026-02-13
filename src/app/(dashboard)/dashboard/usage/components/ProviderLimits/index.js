@@ -73,7 +73,9 @@ function formatCountdown(resetAt) {
       return `${d}d ${h % 24}h`;
     }
     return `${h}h ${m}m`;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export default function ProviderLimits() {
@@ -221,15 +223,18 @@ export default function ProviderLimits() {
   }, [autoRefresh, refreshAll]);
 
   const filteredConnections = useMemo(
-    () => connections.filter(
-      (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
-    ),
+    () =>
+      connections.filter(
+        (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+      ),
     [connections]
   );
 
   const sortedConnections = useMemo(() => {
     const priority = { antigravity: 1, github: 2, codex: 3, claude: 4, kiro: 5 };
-    return [...filteredConnections].sort((a, b) => (priority[a.provider] || 9) - (priority[b.provider] || 9));
+    return [...filteredConnections].sort(
+      (a, b) => (priority[a.provider] || 9) - (priority[b.provider] || 9)
+    );
   }, [filteredConnections]);
 
   const tierByConnection = useMemo(() => {
@@ -259,12 +264,14 @@ export default function ProviderLimits() {
 
   const visibleConnections = useMemo(() => {
     if (tierFilter === "all") return sortedConnections;
-    return sortedConnections.filter((conn) => (tierByConnection[conn.id]?.key || "unknown") === tierFilter);
+    return sortedConnections.filter(
+      (conn) => (tierByConnection[conn.id]?.key || "unknown") === tierFilter
+    );
   }, [sortedConnections, tierByConnection, tierFilter]);
 
   if (initialLoading) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="flex flex-col gap-4">
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -274,12 +281,10 @@ export default function ProviderLimits() {
   if (sortedConnections.length === 0) {
     return (
       <Card padding="lg">
-        <div style={{ textAlign: "center", padding: "48px 0" }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 64, opacity: 0.15 }}>cloud_off</span>
-          <h3 style={{ marginTop: 16, fontSize: 18, fontWeight: 600, color: "var(--text-primary)" }}>
-            No Providers Connected
-          </h3>
-          <p style={{ marginTop: 8, fontSize: 14, color: "var(--text-muted)", maxWidth: 400, margin: "8px auto 0" }}>
+        <div className="text-center py-12">
+          <span className="material-symbols-outlined text-[64px] opacity-15">cloud_off</span>
+          <h3 className="mt-4 text-lg font-semibold text-text-main">No Providers Connected</h3>
+          <p className="mt-2 text-sm text-text-muted max-w-[400px] mx-auto">
             Connect to providers with OAuth to track your API quota limits and usage.
           </p>
         </div>
@@ -288,14 +293,12 @@ export default function ProviderLimits() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="flex flex-col gap-4">
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-            Provider Limits
-          </h2>
-          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-text-main m-0">Provider Limits</h2>
+          <span className="text-[13px] text-text-muted">
             {visibleConnections.length} account{visibleConnections.length !== 1 ? "s" : ""}
             {visibleConnections.length !== sortedConnections.length
               ? ` (filtered from ${sortedConnections.length})`
@@ -303,51 +306,40 @@ export default function ProviderLimits() {
           </span>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setAutoRefresh((p) => !p)}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "6px 12px", borderRadius: 8,
-              border: "1px solid rgba(255,255,255,0.08)",
-              background: "transparent", cursor: "pointer",
-              color: "var(--text-primary)", fontSize: 13,
-            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] bg-transparent cursor-pointer text-text-main text-[13px]"
           >
-            <span className="material-symbols-outlined" style={{
-              fontSize: 18,
-              color: autoRefresh ? "#22c55e" : "var(--text-muted)",
-            }}>
+            <span
+              className="material-symbols-outlined text-[18px]"
+              style={{
+                color: autoRefresh ? "#22c55e" : "var(--text-muted)",
+              }}
+            >
               {autoRefresh ? "toggle_on" : "toggle_off"}
             </span>
             Auto-refresh
-            {autoRefresh && (
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>({countdown}s)</span>
-            )}
+            {autoRefresh && <span className="text-xs text-text-muted">({countdown}s)</span>}
           </button>
 
           <button
             onClick={refreshAll}
             disabled={refreshingAll}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "6px 14px", borderRadius: 8,
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              cursor: refreshingAll ? "not-allowed" : "pointer",
-              opacity: refreshingAll ? 0.5 : 1,
-              color: "var(--text-primary)", fontSize: 13,
-            }}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white/[0.06] border border-white/10 text-text-main text-[13px] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
-            <span className={`material-symbols-outlined ${refreshingAll ? "animate-spin" : ""}`}
-              style={{ fontSize: 16 }}>refresh</span>
+            <span
+              className={`material-symbols-outlined text-[16px] ${refreshingAll ? "animate-spin" : ""}`}
+            >
+              refresh
+            </span>
             Refresh All
           </button>
         </div>
       </div>
 
       {/* Tier Filters */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div className="flex items-center gap-2 flex-wrap">
         {TIER_FILTERS.map((tier) => {
           if (tier.key !== "all" && !tierCounts[tier.key]) return null;
           const active = tierFilter === tier.key;
@@ -355,51 +347,33 @@ export default function ProviderLimits() {
             <button
               key={tier.key}
               onClick={() => setTierFilter(tier.key)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold cursor-pointer"
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "5px 10px",
-                borderRadius: 9999,
-                border: active ? "1px solid var(--primary, #f97815)" : "1px solid rgba(255,255,255,0.12)",
+                border: active
+                  ? "1px solid var(--primary, #f97815)"
+                  : "1px solid rgba(255,255,255,0.12)",
                 background: active ? "rgba(249,120,21,0.14)" : "transparent",
                 color: active ? "var(--primary, #f97815)" : "var(--text-muted)",
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
               }}
             >
               <span>{tier.label}</span>
-              <span style={{ opacity: 0.85 }}>{tierCounts[tier.key] || 0}</span>
+              <span className="opacity-85">{tierCounts[tier.key] || 0}</span>
             </button>
           );
         })}
       </div>
 
       {/* Account rows */}
-      <div style={{
-        borderRadius: 12,
-        border: "1px solid rgba(255,255,255,0.06)",
-        overflow: "hidden",
-        background: "rgba(0,0,0,0.15)",
-      }}>
+      <div className="rounded-xl border border-white/[0.06] overflow-hidden bg-black/15">
         {/* Table header */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "280px 1fr 100px 48px",
-          alignItems: "center",
-          padding: "10px 16px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-          fontSize: 11,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          color: "var(--text-muted)",
-        }}>
+        <div
+          className="items-center px-4 py-2.5 border-b border-white/[0.06] text-[11px] font-semibold uppercase tracking-wider text-text-muted"
+          style={{ display: "grid", gridTemplateColumns: "280px 1fr 100px 48px" }}
+        >
           <div>Account</div>
           <div>Model Quotas</div>
-          <div style={{ textAlign: "center" }}>Last Used</div>
-          <div style={{ textAlign: "center" }}>Actions</div>
+          <div className="text-center">Last Used</div>
+          <div className="text-center">Actions</div>
         </div>
 
         {visibleConnections.map((conn, idx) => {
@@ -412,155 +386,136 @@ export default function ProviderLimits() {
           return (
             <div
               key={conn.id}
+              className="items-center px-4 py-3.5 transition-[background] duration-150 hover:bg-white/[0.02]"
               style={{
                 display: "grid",
                 gridTemplateColumns: "280px 1fr 100px 48px",
-                alignItems: "center",
-                padding: "14px 16px",
-                borderBottom: idx < visibleConnections.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
-                transition: "background 0.15s",
+                borderBottom:
+                  idx < visibleConnections.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               {/* Account Info */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  overflow: "hidden", flexShrink: 0,
-                }}>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
                   <Image
                     src={`/providers/${conn.provider}.png`}
                     alt={conn.provider}
-                    width={32} height={32}
+                    width={32}
+                    height={32}
                     className="object-contain"
                     sizes="32px"
                   />
                 </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 13, fontWeight: 600, color: "var(--text-primary)",
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  }}>
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold text-text-main truncate">
                     {conn.name || config.label}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                  <div className="flex items-center gap-1.5 mt-0.5">
                     <span title={quota?.plan ? `Raw plan: ${quota.plan}` : "No plan from provider"}>
                       <Badge variant={tierMeta.variant} size="sm" dot>
                         {tierMeta.label}
                       </Badge>
                     </span>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{config.label}</span>
+                    <span className="text-[11px] text-text-muted">{config.label}</span>
                   </div>
                 </div>
               </div>
 
               {/* Quota Bars */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px", paddingRight: 12 }}>
+              <div className="flex flex-wrap gap-x-3 gap-y-1.5 pr-3">
                 {isLoading ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-muted)", fontSize: 12 }}>
-                    <span className="material-symbols-outlined animate-spin" style={{ fontSize: 14 }}>progress_activity</span>
+                  <div className="flex items-center gap-1.5 text-text-muted text-xs">
+                    <span className="material-symbols-outlined animate-spin text-[14px]">
+                      progress_activity
+                    </span>
                     Loading...
                   </div>
                 ) : error ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#ef4444" }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>error</span>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }}>
+                  <div className="flex items-center gap-1.5 text-xs text-red-500">
+                    <span className="material-symbols-outlined text-[14px]">error</span>
+                    <span className="overflow-hidden text-ellipsis whitespace-nowrap max-w-[300px]">
                       {error}
                     </span>
                   </div>
                 ) : quota?.message && (!quota.quotas || quota.quotas.length === 0) ? (
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                    {quota.message}
-                  </div>
+                  <div className="text-xs text-text-muted italic">{quota.message}</div>
                 ) : quota?.quotas?.length > 0 ? (
                   quota.quotas.map((q, i) => {
-                    const remaining = q.remainingPercentage !== undefined
-                      ? Math.round(q.remainingPercentage)
-                      : calculatePercentage(q.used, q.total);
+                    const remaining =
+                      q.remainingPercentage !== undefined
+                        ? Math.round(q.remainingPercentage)
+                        : calculatePercentage(q.used, q.total);
                     const colors = getBarColor(remaining);
                     const cd = formatCountdown(q.resetAt);
                     const shortName = getShortModelName(q.name);
 
                     return (
-                      <div key={i} style={{
-                        display: "flex", alignItems: "center", gap: 6,
-                        minWidth: 200, flex: "0 0 auto",
-                      }}>
+                      <div key={i} className="flex items-center gap-1.5 min-w-[200px] shrink-0">
                         {/* Model label */}
-                        <span style={{
-                          fontSize: 11, fontWeight: 600,
-                          padding: "2px 8px", borderRadius: 4,
-                          background: colors.bg, color: colors.text,
-                          whiteSpace: "nowrap", minWidth: 60, textAlign: "center",
-                        }}>
+                        <span
+                          className="text-[11px] font-semibold py-0.5 px-2 rounded whitespace-nowrap min-w-[60px] text-center"
+                          style={{ background: colors.bg, color: colors.text }}
+                        >
                           {shortName}
                         </span>
 
                         {/* Countdown */}
                         {cd && (
-                          <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                          <span className="text-[10px] text-text-muted whitespace-nowrap">
                             ⏱ {cd}
                           </span>
                         )}
 
                         {/* Progress bar */}
-                        <div style={{
-                          flex: 1, height: 6, borderRadius: 3,
-                          background: "rgba(255,255,255,0.06)",
-                          minWidth: 60, overflow: "hidden",
-                        }}>
-                          <div style={{
-                            height: "100%", borderRadius: 3,
-                            width: `${Math.min(remaining, 100)}%`,
-                            background: colors.bar,
-                            transition: "width 0.3s ease",
-                          }} />
+                        <div className="flex-1 h-1.5 rounded-sm bg-white/[0.06] min-w-[60px] overflow-hidden">
+                          <div
+                            className="h-full rounded-sm transition-[width] duration-300 ease-out"
+                            style={{
+                              width: `${Math.min(remaining, 100)}%`,
+                              background: colors.bar,
+                            }}
+                          />
                         </div>
 
                         {/* Percentage */}
-                        <span style={{
-                          fontSize: 11, fontWeight: 600,
-                          color: colors.text, minWidth: 32, textAlign: "right",
-                        }}>
+                        <span
+                          className="text-[11px] font-semibold min-w-[32px] text-right"
+                          style={{ color: colors.text }}
+                        >
                           {remaining}%
                         </span>
                       </div>
                     );
                   })
                 ) : (
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                    No quota data
-                  </div>
+                  <div className="text-xs text-text-muted italic">No quota data</div>
                 )}
               </div>
 
               {/* Last Used */}
-              <div style={{ textAlign: "center", fontSize: 11, color: "var(--text-muted)" }}>
+              <div className="text-center text-[11px] text-text-muted">
                 {lastUpdated ? (
-                  <span>{lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                ) : "-"}
+                  <span>
+                    {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                ) : (
+                  "-"
+                )}
               </div>
 
               {/* Actions */}
-              <div style={{ display: "flex", justifyContent: "center", gap: 2 }}>
+              <div className="flex justify-center gap-0.5">
                 <button
                   onClick={() => refreshProvider(conn.id, conn.provider)}
                   disabled={isLoading}
                   title="Refresh quota"
-                  style={{
-                    padding: 4, borderRadius: 6, border: "none",
-                    background: "transparent", cursor: isLoading ? "not-allowed" : "pointer",
-                    opacity: isLoading ? 0.3 : 0.6,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    transition: "opacity 0.15s",
-                  }}
-                  onMouseEnter={(e) => { if (!isLoading) e.currentTarget.style.opacity = "1"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.opacity = isLoading ? "0.3" : "0.6"; }}
+                  className="p-1 rounded-md border-none bg-transparent cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 opacity-60 hover:opacity-100 flex items-center justify-center transition-opacity duration-150"
                 >
-                  <span className={`material-symbols-outlined ${isLoading ? "animate-spin" : ""}`}
-                    style={{ fontSize: 16, color: "var(--text-muted)" }}>refresh</span>
+                  <span
+                    className={`material-symbols-outlined text-[16px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
+                  >
+                    refresh
+                  </span>
                 </button>
               </div>
             </div>
@@ -568,8 +523,9 @@ export default function ProviderLimits() {
         })}
 
         {visibleConnections.length === 0 && (
-          <div style={{ padding: "26px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
-            No accounts found for tier filter <strong>{TIER_FILTERS.find((t) => t.key === tierFilter)?.label || tierFilter}</strong>.
+          <div className="py-6 px-4 text-center text-text-muted text-[13px]">
+            No accounts found for tier filter{" "}
+            <strong>{TIER_FILTERS.find((t) => t.key === tierFilter)?.label || tierFilter}</strong>.
           </div>
         )}
       </div>

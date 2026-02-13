@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 
 // DELETE /api/keys/[id] - Delete API key
 export async function DELETE(request, { params }) {

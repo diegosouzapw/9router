@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Card from "./Card";
 import Badge from "./Badge";
 import { CardSkeleton } from "./Loading";
+import { fmtFull, fmtCost } from "@/shared/utils/formatting";
 
 function SortIcon({ field, currentSort, currentOrder }) {
   if (currentSort !== field) return <span className="ml-1 opacity-20">↕</span>;
@@ -196,11 +197,10 @@ export default function UsageStats() {
       <div className="text-text-muted">Failed to load usage statistics.</div>
     );
 
-  // Format number with commas
-  const fmt = (n) => new Intl.NumberFormat().format(n || 0);
+  // Format number with commas — delegated to shared module
+  const fmt = (n) => fmtFull(n);
 
-  // Format cost with dollar sign and 2 decimals
-  const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
+  // Format cost with dollar sign and 2 decimals — delegated to shared module
 
   // Time format for "Last Used"
   const fmtTime = (iso) => {

@@ -1,12 +1,15 @@
 # Plano de Implementação: P0 + Deltas GitHub (Issues #73 e #102)
 
 ## Resumo
+
 Implementar uma correção fechada para o bloco crítico de roteamento/modelos, com escopo já decidido:
+
 1. Corrigir fallback implícito de modelo sem prefixo para evitar roteamento incorreto para OpenAI (`#73`).
 2. Suportar `/responses` para modelos GitHub Copilot que exigem esse endpoint (`#102`), incluindo `stream=true` e `stream=false`.
 3. Atualizar catálogo GitHub com correções críticas e modelos extras aprovados (`GPT-4o mini`, `GPT-4`, `GPT-3.5 Turbo`), mantendo compatibilidade via aliases.
 
 ## Escopo Fechado
+
 1. Implementar apenas `P0 + deltas GitHub`.
 2. Política de fallback sem prefixo:
    `resolver por provedor único` e `retornar erro em caso ambíguo`.
@@ -17,6 +20,7 @@ Implementar uma correção fechada para o bloco crítico de roteamento/modelos, 
 ## Mudanças Técnicas (Decision Complete)
 
 ### 1. Resolução de Modelo e Política de Ambiguidade (#73)
+
 1. Arquivo: `open-sse/services/model.js`
 2. Adicionar resolução canônica provider/model com duas camadas:
    - `PROVIDER_MODEL_ALIASES` para aliases legados por provider (inicialmente `github`).
@@ -35,6 +39,7 @@ Implementar uma correção fechada para o bloco crítico de roteamento/modelos, 
      `Ambiguous model '<id>'. Use provider/model prefix (ex: gh/<id> or cc/<id>).`
 
 ### 2. Endpoint Dinâmico `/chat/completions` vs `/responses` para GitHub (#102)
+
 1. Arquivo: `open-sse/config/providerRegistry.js`
 2. Em `github.models`, marcar modelos Codex com metadata explícita:
    `targetFormat: "openai-responses"`.
@@ -56,6 +61,7 @@ Implementar uma correção fechada para o bloco crítico de roteamento/modelos, 
      - caso contrário, usar `baseUrl`.
 
 ### 3. Deltas de Catálogo GitHub (Críticos + Extras aprovados)
+
 1. Arquivo: `open-sse/config/providerRegistry.js` (`github.models`)
 2. Aplicar correções críticas:
    - `raptor-mini` -> `oswe-vscode-prime` (nome exibido: Raptor Mini).
@@ -75,6 +81,7 @@ Implementar uma correção fechada para o bloco crítico de roteamento/modelos, 
    - `github: raptor-mini -> oswe-vscode-prime`
 
 ### 4. Suporte Non-Stream para Respostas GitHub em `/responses`
+
 1. Arquivo: `open-sse/handlers/responseTranslator.js`
 2. Adicionar branch para `targetFormat === FORMATS.OPENAI_RESPONSES`:
    - Converter resposta `Responses API` não-stream para objeto `chat.completion` OpenAI.
@@ -85,6 +92,7 @@ Implementar uma correção fechada para o bloco crítico de roteamento/modelos, 
    - Adicionar extração de usage para payload `Responses API` (`responseBody.usage.input_tokens/output_tokens`).
 
 ## Mudanças Importantes em APIs/Interfaces/Tipos
+
 1. Interface interna de resolução de modelo:
    - `getModelInfoCore()` passa a poder retornar erro semântico de ambiguidade (provider nulo + mensagem contextual).
 2. Metadata de modelo no registry:
@@ -98,6 +106,7 @@ Implementar uma correção fechada para o bloco crítico de roteamento/modelos, 
 ## Testes e Cenários de Validação
 
 ### Testes de Unidade/Smoke (determinísticos)
+
 1. `open-sse/services/model.js`:
    - `claude-haiku-4-5-20251001` sem prefixo resolve provider único (`claude`).
    - `gpt-4o` sem prefixo continua resolvendo para `openai`.
@@ -112,6 +121,7 @@ Implementar uma correção fechada para o bloco crítico de roteamento/modelos, 
    - usage de `Responses API` é extraído corretamente.
 
 ### Validação de Integração
+
 1. `POST /v1/chat/completions` com `model=gh/gpt-5.1-codex`, `stream=true`:
    - sem erro de endpoint.
 2. Mesmo teste com `stream=false`:
@@ -122,10 +132,12 @@ Implementar uma correção fechada para o bloco crítico de roteamento/modelos, 
    - recebe `400` com mensagem para usar prefixo.
 
 ### Check final de qualidade
+
 1. `npm run lint`
 2. `npm run build`
 
 ## Rollout e Observabilidade
+
 1. Rollout direto em branch de feature (sem migration de DB).
 2. Logar warning quando ocorrer ambiguidade de modelo sem prefixo.
 3. Registrar no changelog interno:
@@ -133,6 +145,7 @@ Implementar uma correção fechada para o bloco crítico de roteamento/modelos, 
    - correção de endpoint GH Codex.
 
 ## Riscos e Mitigações
+
 1. Risco: mudança de comportamento para usuários que dependiam de fallback implícito errado.
    - Mitigação: erro 400 explícito e instrução de prefixo.
 2. Risco: regressão em modelos GH não-Codex.
@@ -141,6 +154,7 @@ Implementar uma correção fechada para o bloco crítico de roteamento/modelos, 
    - Mitigação: converter apenas campos estáveis e fallback seguro para conteúdo vazio quando necessário.
 
 ## Assumptions e Defaults
+
 1. `Codex` no provider `gh` deve usar `/responses` por padrão.
 2. `fallback openai` permanece para modelos desconhecidos não catalogados (compatibilidade).
 3. Para ambiguidade sem prefixo, política é fail-with-message (não autoescolher provider).

@@ -1,18 +1,26 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, createProviderConnection, getProviderNodeById, isCloudEnabled } from "@/models";
+import {
+  getProviderConnections,
+  createProviderConnection,
+  getProviderNodeById,
+  isCloudEnabled,
+} from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import {
+  isOpenAICompatibleProvider,
+  isAnthropicCompatibleProvider,
+} from "@/shared/constants/providers";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 import { createProviderSchema, validateBody } from "@/shared/validation/schemas";
 
 // GET /api/providers - List all connections
 export async function GET() {
   try {
     const connections = await getProviderConnections();
-    
+
     // Hide sensitive fields
-    const safeConnections = connections.map(c => ({
+    const safeConnections = connections.map((c) => ({
       ...c,
       apiKey: undefined,
       accessToken: undefined,
@@ -37,19 +45,22 @@ export async function POST(request) {
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-    const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = validation.data;
+    const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } =
+      validation.data;
 
     // Business validation
-    const isValidProvider = APIKEY_PROVIDERS[provider] || 
-                          isOpenAICompatibleProvider(provider) || 
-                          isAnthropicCompatibleProvider(provider);
+    const isValidProvider =
+      APIKEY_PROVIDERS[provider] ||
+      isOpenAICompatibleProvider(provider) ||
+      isAnthropicCompatibleProvider(provider);
 
     if (!isValidProvider) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
 
     let providerSpecificData = null;
-    const allowMultipleCompatibleConnections = process.env.ALLOW_MULTI_CONNECTIONS_PER_COMPAT_NODE === "true";
+    const allowMultipleCompatibleConnections =
+      process.env.ALLOW_MULTI_CONNECTIONS_PER_COMPAT_NODE === "true";
 
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
@@ -59,7 +70,10 @@ export async function POST(request) {
 
       const existingConnections = await getProviderConnections({ provider });
       if (!allowMultipleCompatibleConnections && existingConnections.length > 0) {
-        return NextResponse.json({ error: "Only one connection is allowed for this OpenAI Compatible node" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Only one connection is allowed for this OpenAI Compatible node" },
+          { status: 400 }
+        );
       }
 
       providerSpecificData = {
@@ -76,7 +90,10 @@ export async function POST(request) {
 
       const existingConnections = await getProviderConnections({ provider });
       if (!allowMultipleCompatibleConnections && existingConnections.length > 0) {
-        return NextResponse.json({ error: "Only one connection is allowed for this Anthropic Compatible node" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Only one connection is allowed for this Anthropic Compatible node" },
+          { status: 400 }
+        );
       }
 
       providerSpecificData = {

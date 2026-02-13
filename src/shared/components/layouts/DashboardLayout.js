@@ -48,7 +48,7 @@ export default function DashboardLayout({ children }) {
       </div>
 
       {/* Main content */}
-      <main className="flex flex-col flex-1 h-full min-w-0 relative transition-colors duration-300">
+      <main id="main-content" className="flex flex-col flex-1 h-full min-w-0 relative transition-colors duration-300">
         <Header onMenuClick={() => setSidebarOpen(true)} />
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 lg:p-10">
           <div className="max-w-7xl mx-auto">{children}</div>

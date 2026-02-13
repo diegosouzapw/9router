@@ -2,39 +2,9 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Card from "./Card";
+import { PROTOCOL_COLORS, PROVIDER_COLORS, getHttpStatusStyle as getStatusStyle } from "@/shared/constants/colors";
+import { formatTime, formatDuration, maskSegment, maskAccount, formatApiKeyLabel } from "@/shared/utils/formatting";
 
-// Protocol badge colors
-const PROTOCOL_COLORS = {
-  openai: { bg: "#10A37F", text: "#fff", label: "OpenAI" },
-  claude: { bg: "#D97757", text: "#fff", label: "Claude" },
-  gemini: { bg: "#4285F4", text: "#fff", label: "Gemini" },
-  warmup: { bg: "#F59E0B", text: "#000", label: "Warmup" },
-  bypass: { bg: "#6B7280", text: "#fff", label: "Bypass" },
-};
-
-// Provider badge colors
-const PROVIDER_COLORS = {
-  github: { bg: "#6e40c9", text: "#fff", label: "GitHub" },
-  kiro: { bg: "#FF9900", text: "#000", label: "Kiro" },
-  antigravity: { bg: "#4285F4", text: "#fff", label: "AG" },
-  claude: { bg: "#D97757", text: "#fff", label: "Claude" },
-  codex: { bg: "#10A37F", text: "#fff", label: "Codex" },
-  gemini: { bg: "#34A853", text: "#fff", label: "Gemini" },
-  qwen: { bg: "#6366F1", text: "#fff", label: "Qwen" },
-  iflow: { bg: "#EC4899", text: "#fff", label: "iFlow" },
-  fireworks: { bg: "#F97316", text: "#fff", label: "Fireworks" },
-  kimi: { bg: "#06B6D4", text: "#fff", label: "Kimi" },
-  "gemini-cli": { bg: "#34A853", text: "#fff", label: "Gemini CLI" },
-};
-
-// Status badge styling
-function getStatusStyle(status) {
-  if (status >= 200 && status < 300) return { bg: "#059669", text: "#fff" };
-  if (status >= 400 && status < 500) return { bg: "#D97706", text: "#fff" };
-  if (status >= 500) return { bg: "#DC2626", text: "#fff" };
-  if (status === 0) return { bg: "#6366F1", text: "#fff" }; // pending
-  return { bg: "#6B7280", text: "#fff" };
-}
 
 // Quick filter categories - status-based only (providers are dynamic from data)
 const STATUS_FILTERS = [
@@ -60,46 +30,7 @@ const COLUMNS = [
 
 const DEFAULT_VISIBLE = Object.fromEntries(COLUMNS.map(c => [c.key, true]));
 
-function formatTime(isoString) {
-  try {
-    const d = new Date(isoString);
-    return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  } catch {
-    return "-";
-  }
-}
 
-function formatDuration(ms) {
-  if (!ms) return "-";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function maskAccount(account) {
-  if (!account || account === "-") return "-";
-  // mask email: show first 3 chars + *** + @domain
-  const atIdx = account.indexOf("@");
-  if (atIdx > 3) {
-    return account.slice(0, 3) + "***" + account.slice(atIdx);
-  }
-  if (account.length > 8) {
-    return account.slice(0, 5) + "***";
-  }
-  return account;
-}
-
-function maskSegment(value, start = 2, end = 2) {
-  if (!value) return "";
-  if (value.length <= start + end) return `${value.slice(0, 1)}***`;
-  return `${value.slice(0, start)}***${value.slice(-end)}`;
-}
-
-function formatApiKeyLabel(apiKeyName, apiKeyId) {
-  if (!apiKeyName && !apiKeyId) return "—";
-  const maskedName = apiKeyName ? maskSegment(apiKeyName, 2, 1) : "key";
-  if (!apiKeyId) return maskedName;
-  return `${maskedName} (${maskSegment(apiKeyId, 4, 4)})`;
-}
 
 function getLogTotalTokens(log) {
   return (log?.tokens?.in || 0) + (log?.tokens?.out || 0);

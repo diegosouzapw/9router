@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById, updateProviderConnection, deleteProviderConnection, isCloudEnabled } from "@/models";
+import {
+  getProviderConnectionById,
+  updateProviderConnection,
+  deleteProviderConnection,
+  isCloudEnabled,
+} from "@/models";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 
 // GET /api/providers/[id] - Get single connection
 export async function GET(request, { params }) {

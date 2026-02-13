@@ -13,6 +13,8 @@ export function Spinner({ size = "md", className }) {
 
   return (
     <span
+      role="status"
+      aria-label="Loading"
       className={cn(
         "material-symbols-outlined animate-spin text-primary",
         sizes[size],
@@ -38,6 +40,7 @@ export function PageLoading({ message = "Loading..." }) {
 export function Skeleton({ className, ...props }) {
   return (
     <div
+      aria-hidden="true"
       className={cn(
         "animate-pulse rounded-lg bg-border",
         className

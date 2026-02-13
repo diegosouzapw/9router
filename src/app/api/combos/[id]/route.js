@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName, getCombos, isCloudEnabled } from "@/lib/localDb";
+import {
+  getComboById,
+  updateCombo,
+  deleteCombo,
+  getComboByName,
+  getCombos,
+  isCloudEnabled,
+} from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 import { validateComboDAG } from "open-sse/services/combo.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
@@ -12,11 +19,11 @@ export async function GET(request, { params }) {
   try {
     const { id } = await params;
     const combo = await getComboById(id);
-    
+
     if (!combo) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
     }
-    
+
     return NextResponse.json(combo);
   } catch (error) {
     console.log("Error fetching combo:", error);
@@ -29,27 +36,28 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    
+
     // Validate name format if provided
     if (body.name) {
       if (!VALID_NAME_REGEX.test(body.name)) {
-        return NextResponse.json({ error: "Name can only contain letters, numbers, - and _" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Name can only contain letters, numbers, - and _" },
+          { status: 400 }
+        );
       }
-      
+
       // Check if name already exists (exclude current combo)
       const existing = await getComboByName(body.name);
       if (existing && existing.id !== id) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
       }
     }
-    
+
     // Validate nested combo DAG (no circular references, max depth)
     if (body.models) {
       const allCombos = await getCombos();
       // Update the combo in the list temporarily for validation
-      const updatedCombos = allCombos.map(c => 
-        c.id === id ? { ...c, ...body } : c
-      );
+      const updatedCombos = allCombos.map((c) => (c.id === id ? { ...c, ...body } : c));
       const comboName = body.name || (await getComboById(id))?.name;
       if (comboName) {
         try {
@@ -59,16 +67,16 @@ export async function PUT(request, { params }) {
         }
       }
     }
-    
+
     const combo = await updateCombo(id, body);
-    
+
     if (!combo) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
     }
 
     // Auto sync to Cloud if enabled
     await syncToCloudIfEnabled();
-    
+
     return NextResponse.json(combo);
   } catch (error) {
     console.log("Error updating combo:", error);
@@ -81,14 +89,14 @@ export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
     const success = await deleteCombo(id);
-    
+
     if (!success) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
     }
 
     // Auto sync to Cloud if enabled
     await syncToCloudIfEnabled();
-    
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.log("Error deleting combo:", error);
