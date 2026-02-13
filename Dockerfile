@@ -10,7 +10,10 @@ RUN mkdir -p /app/data && npm run build
 FROM node:22-bookworm-slim AS runner-base
 WORKDIR /app
 
-LABEL org.opencontainers.image.title="9router"
+LABEL org.opencontainers.image.title="9router" \
+  org.opencontainers.image.description="Unified AI proxy — route any LLM through one endpoint" \
+  org.opencontainers.image.source="https://github.com/decolua/9router" \
+  org.opencontainers.image.licenses="MIT"
 
 ENV NODE_ENV=production
 ENV PORT=20128
@@ -25,14 +28,19 @@ COPY --from=builder /app/.next/standalone ./
 
 EXPOSE 20128
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:20128/api/settings').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"
+
 CMD ["node", "server.js"]
 
 FROM runner-base AS runner-cli
 
-# Install commonly used CLIs inside container for portable Docker deployments.
-# openclaw depends on git+ssh references, so rewrite to https for non-interactive builds.
+# Install system dependencies required by openclaw (git+ssh references).
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
-  && git config --system url."https://github.com/".insteadOf "ssh://git@github.com/" \
-  && npm install -g --no-audit --no-fund @openai/codex @anthropic-ai/claude-code droid openclaw@latest
+  && git config --system url."https://github.com/".insteadOf "ssh://git@github.com/"
+
+# Install CLI tools globally. Separate layer from apt for better cache reuse.
+RUN npm install -g --no-audit --no-fund @openai/codex @anthropic-ai/claude-code droid openclaw@latest
+
