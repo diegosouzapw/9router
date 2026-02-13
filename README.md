@@ -131,7 +131,7 @@ Default URLs:
 | 🎨 **Custom Combos**             | Create unlimited model combinations        | Tailor fallback to your needs       |
 | 🧩 **Custom Models**             | Add any model ID to any provider           | No app update needed for new models |
 | 🛣️ **Dedicated Provider Routes** | Per-provider API endpoints                 | Direct routing, model validation    |
-| 🌐 **Network Proxy**             | Global + per-provider outbound proxy       | Works behind firewalls/VPNs         |
+| 🌐 **Network Proxy**             | Hierarchical outbound proxy + env fallback | Works behind firewalls/VPNs         |
 | 📋 **Model Catalog API**         | All models grouped by provider + type      | Discover available models easily    |
 | 📝 **Request Logging**           | Debug mode with full request/response logs | Troubleshoot issues easily          |
 | 💾 **Cloud Sync**                | Sync config across devices                 | Same setup everywhere               |
@@ -731,6 +731,8 @@ docker stop 9router && docker rm 9router
 | `ENABLE_REQUEST_LOGS`                                | `false`                            | Enables request/response logs under `logs/`                                            |
 | `AUTH_COOKIE_SECURE`                                 | `false`                            | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy)                     |
 | `REQUIRE_API_KEY`                                    | `false`                            | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys)    |
+| `ENABLE_SOCKS5_PROXY`                                | `false`                            | Enables backend/runtime SOCKS5 support for outbound proxy                              |
+| `NEXT_PUBLIC_ENABLE_SOCKS5_PROXY`                    | `false`                            | Shows SOCKS5 option in dashboard proxy UI                                              |
 | `ALLOW_MULTI_CONNECTIONS_PER_COMPAT_NODE`            | `false`                            | Allow multiple connections for each OpenAI/Anthropic-compatible custom node            |
 | `CLI_MODE`                                           | `auto`                             | CLI runtime profile: `auto`, `host`, or `container`                                    |
 | `CLI_EXTRA_PATHS`                                    | empty                              | Extra `PATH` entries used for CLI detection/healthcheck (split by `:` on Linux)        |
@@ -931,24 +933,35 @@ The provider prefix is auto-added if missing. Mismatched models return `400`.
 <details>
 <summary><b>Network Proxy Configuration</b></summary>
 
-Configure outbound proxies globally or per-provider:
+Configure outbound proxies globally, or per-provider via structured proxy objects:
 
 ```bash
 # Set global proxy
 curl -X PUT http://localhost:20128/api/settings/proxy \
   -H "Content-Type: application/json" \
-  -d '{"global": "http://proxy.example.com:8080"}'
+  -d '{"global": {"type":"http","host":"proxy.example.com","port":"8080"}}'
 
 # Set per-provider proxy
 curl -X PUT http://localhost:20128/api/settings/proxy \
   -H "Content-Type: application/json" \
-  -d '{"providers": {"openai": "socks5://proxy.example.com:1080"}}'
+  -d '{"providers": {"openai": {"type":"socks5","host":"proxy.example.com","port":"1080"}}}'
+
+# Test a proxy before saving
+curl -X POST http://localhost:20128/api/settings/proxy/test \
+  -H "Content-Type: application/json" \
+  -d '{"proxy":{"type":"socks5","host":"proxy.example.com","port":"1080"}}'
 
 # Get current config
 curl http://localhost:20128/api/settings/proxy
 ```
 
-**Precedence:** Provider-specific → Global → Environment variables (`HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`).
+Notes:
+
+- SOCKS5 is feature-flagged. Enable backend/runtime with `ENABLE_SOCKS5_PROXY=true`.
+- To display SOCKS5 in the dashboard UI, also set `NEXT_PUBLIC_ENABLE_SOCKS5_PROXY=true`.
+- Requests are fail-closed when a configured proxy fails (no direct-connection fallback).
+
+**Precedence:** Key-specific → Combo-specific → Provider-specific → Global → Environment (`HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`).
 
 </details>
 

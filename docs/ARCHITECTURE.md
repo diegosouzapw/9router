@@ -123,7 +123,7 @@ Management domains:
 - Provider nodes: `src/app/api/provider-nodes*`
 - Custom models: `src/app/api/provider-models` (GET/POST/DELETE)
 - Model catalog: `src/app/api/models/catalog` (GET)
-- Proxy config: `src/app/api/settings/proxy` (GET/PUT)
+- Proxy config: `src/app/api/settings/proxy` (GET/PUT/DELETE) + `src/app/api/settings/proxy/test` (POST)
 - OAuth: `src/app/api/oauth/*`
 - Keys/aliases/combos/pricing: `src/app/api/keys*`, `src/app/api/models/alias`, `src/app/api/combos*`, `src/app/api/pricing`
 - Usage: `src/app/api/usage/*`
@@ -454,7 +454,8 @@ flowchart LR
 - `src/app/api/models/alias`: alias management
 - `src/app/api/combos*`: fallback combo management
 - `src/app/api/pricing`: pricing overrides for cost calculation
-- `src/app/api/settings/proxy`: proxy configuration (GET/PUT)
+- `src/app/api/settings/proxy`: proxy configuration (GET/PUT/DELETE)
+- `src/app/api/settings/proxy/test`: outbound proxy connectivity test (POST)
 - `src/app/api/usage/*`: usage and logs APIs
 - `src/app/api/sync/*` + `src/app/api/cloud/*`: cloud sync and cloud-facing helpers
 - `src/app/api/cli-tools/*`: local CLI config writers/checkers
@@ -564,7 +565,8 @@ Translations are selected dynamically based on source payload shape and provider
 | `GET /v1/models`                                   | OpenAI Models list | API route (chat + embedding + image + custom models) |
 | `GET /api/models/catalog`                          | Catalog            | All models grouped by provider + type                |
 | `POST /v1beta/models/*:streamGenerateContent`      | Gemini native      | API route                                            |
-| `GET/PUT /api/settings/proxy`                      | Proxy Config       | Network proxy configuration                          |
+| `GET/PUT/DELETE /api/settings/proxy`               | Proxy Config       | Network proxy configuration                          |
+| `POST /api/settings/proxy/test`                    | Proxy Connectivity | Proxy health/connectivity test endpoint              |
 | `GET/POST/DELETE /api/provider-models`             | Custom Models      | Custom model management per provider                 |
 
 ## Bypass Handler
@@ -641,6 +643,7 @@ Environment variables actively used by code:
 - Logging: `ENABLE_REQUEST_LOGS`
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
+- SOCKS5 feature flags: `ENABLE_SOCKS5_PROXY`, `NEXT_PUBLIC_ENABLE_SOCKS5_PROXY`
 - Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
 
 ## Known Architectural Notes

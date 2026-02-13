@@ -455,7 +455,8 @@ logs/
 | --------------------------------------------- | --------------- | ------------------------------------------------------------------------------------- |
 | `/api/provider-models`                        | GET/POST/DELETE | CRUD for custom models per provider                                                   |
 | `/api/models/catalog`                         | GET             | Aggregated catalog of all models (chat, embedding, image, custom) grouped by provider |
-| `/api/settings/proxy`                         | GET/PUT         | Global + per-provider outbound proxy configuration                                    |
+| `/api/settings/proxy`                         | GET/PUT/DELETE  | Hierarchical outbound proxy configuration (`global/providers/combos/keys`)            |
+| `/api/settings/proxy/test`                    | POST            | Validates proxy connectivity and returns public IP/latency                            |
 | `/v1/providers/[provider]/chat/completions`   | POST            | Dedicated per-provider chat completions with model validation                         |
 | `/v1/providers/[provider]/embeddings`         | POST            | Dedicated per-provider embeddings with model validation                               |
 | `/v1/providers/[provider]/images/generations` | POST            | Dedicated per-provider image generation with model validation                         |

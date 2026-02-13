@@ -4,9 +4,24 @@ import {
   getProxyForLevel,
   deleteProxyForLevel,
   resolveProxyForConnection,
-} from "@/lib/localDb";
+} from "../../../../lib/localDb.js";
 
-const SUPPORTED_PROXY_TYPES = new Set(["http", "https"]);
+const BASE_SUPPORTED_PROXY_TYPES = new Set(["http", "https"]);
+
+function isSocks5Enabled() {
+  return process.env.ENABLE_SOCKS5_PROXY === "true";
+}
+
+function getSupportedProxyTypes() {
+  if (isSocks5Enabled()) {
+    return new Set([...BASE_SUPPORTED_PROXY_TYPES, "socks5"]);
+  }
+  return BASE_SUPPORTED_PROXY_TYPES;
+}
+
+function supportedTypesMessage() {
+  return isSocks5Enabled() ? "http, https, or socks5" : "http or https";
+}
 
 function createInvalidProxyError(message) {
   const error = new Error(message);
@@ -22,13 +37,16 @@ function normalizeAndValidateProxy(proxy, pathLabel) {
   }
 
   const type = String(proxy.type || "http").toLowerCase();
-  if (type.startsWith("socks")) {
+  if (type === "socks5" && !isSocks5Enabled()) {
     throw createInvalidProxyError(
-      "SOCKS/SOCKS5 proxy is not supported in outbound runtime; use HTTP or HTTPS"
+      "SOCKS5 proxy is disabled (set ENABLE_SOCKS5_PROXY=true to enable)"
     );
   }
-  if (!SUPPORTED_PROXY_TYPES.has(type)) {
-    throw createInvalidProxyError(`${pathLabel}.type must be http or https`);
+  if (type.startsWith("socks") && type !== "socks5") {
+    throw createInvalidProxyError(`${pathLabel}.type must be ${supportedTypesMessage()}`);
+  }
+  if (!getSupportedProxyTypes().has(type)) {
+    throw createInvalidProxyError(`${pathLabel}.type must be ${supportedTypesMessage()}`);
   }
 
   return { ...proxy, type };

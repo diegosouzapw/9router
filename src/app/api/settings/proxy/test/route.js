@@ -1,6 +1,23 @@
-import { ProxyAgent, request as undiciRequest } from "undici";
+import { request as undiciRequest } from "undici";
+import {
+  createProxyDispatcher,
+  isSocks5ProxyEnabled,
+  proxyConfigToUrl,
+  proxyUrlForLogs,
+} from "@9router/open-sse/utils/proxyDispatcher.js";
 
-const SUPPORTED_PROXY_TYPES = new Set(["http", "https"]);
+const BASE_SUPPORTED_PROXY_TYPES = new Set(["http", "https"]);
+
+function getSupportedProxyTypes() {
+  if (isSocks5ProxyEnabled()) {
+    return new Set([...BASE_SUPPORTED_PROXY_TYPES, "socks5"]);
+  }
+  return BASE_SUPPORTED_PROXY_TYPES;
+}
+
+function supportedTypesMessage() {
+  return isSocks5ProxyEnabled() ? "http, https, or socks5" : "http or https";
+}
 
 /**
  * POST /api/settings/proxy/test — test proxy connectivity
@@ -19,22 +36,33 @@ export async function POST(request) {
     }
 
     const proxyType = String(proxy.type || "http").toLowerCase();
-    if (proxyType.startsWith("socks")) {
+    if (proxyType === "socks5" && !isSocks5ProxyEnabled()) {
       return Response.json(
         {
           error: {
-            message: "SOCKS/SOCKS5 proxy is not supported in outbound runtime; use HTTP or HTTPS",
+            message: "SOCKS5 proxy is disabled (set ENABLE_SOCKS5_PROXY=true to enable)",
             type: "invalid_request",
           },
         },
         { status: 400 }
       );
     }
-    if (!SUPPORTED_PROXY_TYPES.has(proxyType)) {
+    if (proxyType.startsWith("socks") && proxyType !== "socks5") {
       return Response.json(
         {
           error: {
-            message: "proxy.type must be http or https",
+            message: `proxy.type must be ${supportedTypesMessage()}`,
+            type: "invalid_request",
+          },
+        },
+        { status: 400 }
+      );
+    }
+    if (!getSupportedProxyTypes().has(proxyType)) {
+      return Response.json(
+        {
+          error: {
+            message: `proxy.type must be ${supportedTypesMessage()}`,
             type: "invalid_request",
           },
         },
@@ -42,15 +70,36 @@ export async function POST(request) {
       );
     }
 
-    const auth = proxy.username
-      ? `${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password || "")}@`
-      : "";
-    const proxyUrl = `${proxyType}://${auth}${proxy.host}:${proxy.port}`;
+    let proxyUrl;
+    try {
+      proxyUrl = proxyConfigToUrl(
+        {
+          type: proxyType,
+          host: proxy.host,
+          port: proxy.port,
+          username: proxy.username || "",
+          password: proxy.password || "",
+        },
+        { allowSocks5: isSocks5ProxyEnabled() }
+      );
+    } catch (proxyError) {
+      return Response.json(
+        {
+          error: {
+            message: proxyError.message || "Invalid proxy configuration",
+            type: "invalid_request",
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const publicProxyUrl = proxyUrlForLogs(proxyUrl);
 
     const startTime = Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    const dispatcher = new ProxyAgent(proxyUrl);
+    const dispatcher = createProxyDispatcher(proxyUrl);
 
     try {
       const result = await undiciRequest("https://api.ipify.org?format=json", {
@@ -73,7 +122,7 @@ export async function POST(request) {
         success: true,
         publicIp: parsed.ip || null,
         latencyMs: Date.now() - startTime,
-        proxyUrl: `${proxyType}://${proxy.host}:${proxy.port}`,
+        proxyUrl: publicProxyUrl,
       });
     } catch (fetchError) {
       return Response.json({
@@ -83,11 +132,10 @@ export async function POST(request) {
             ? "Connection timeout (10s)"
             : fetchError.message || "Connection failed",
         latencyMs: Date.now() - startTime,
-        proxyUrl: `${proxyType}://${proxy.host}:${proxy.port}`,
+        proxyUrl: publicProxyUrl,
       });
     } finally {
       clearTimeout(timeout);
-      await dispatcher.close().catch(() => {});
     }
   } catch (error) {
     return Response.json(

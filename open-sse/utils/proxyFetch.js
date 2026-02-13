@@ -1,5 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { ProxyAgent } from "undici";
+import {
+  createProxyDispatcher,
+  normalizeProxyUrl,
+  proxyConfigToUrl,
+  proxyUrlForLogs,
+} from "./proxyDispatcher.js";
 
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 const PATCH_STATE_KEY = Symbol.for("9router.proxyFetch.state");
@@ -9,7 +14,6 @@ function getPatchState() {
     globalThis[PATCH_STATE_KEY] = {
       originalFetch: globalThis.fetch,
       proxyContext: new AsyncLocalStorage(),
-      dispatcherCache: new Map(),
       isPatched: false,
     };
   }
@@ -19,10 +23,6 @@ function getPatchState() {
 const patchState = getPatchState();
 const originalFetch = patchState.originalFetch;
 const proxyContext = patchState.proxyContext;
-const dispatcherCache = patchState.dispatcherCache;
-
-const SUPPORTED_PROXY_PROTOCOLS = new Set(["http:", "https:"]);
-const UNSUPPORTED_SOCKS_PROTOCOLS = new Set(["socks:", "socks4:", "socks5:"]);
 
 function noProxyMatch(targetUrl) {
   const noProxy = process.env.NO_PROXY || process.env.no_proxy;
@@ -54,64 +54,6 @@ function noProxyMatch(targetUrl) {
     }
     return hostname === patternHost || hostname.endsWith(`.${patternHost}`);
   });
-}
-
-function normalizeProxyUrl(proxyUrl, source = "proxy") {
-  let parsed;
-  try {
-    parsed = new URL(proxyUrl);
-  } catch {
-    throw new Error(`[ProxyFetch] Invalid ${source} URL`);
-  }
-
-  if (UNSUPPORTED_SOCKS_PROTOCOLS.has(parsed.protocol)) {
-    throw new Error("[ProxyFetch] SOCKS/SOCKS5 proxies are not supported in outbound runtime");
-  }
-  if (!SUPPORTED_PROXY_PROTOCOLS.has(parsed.protocol)) {
-    throw new Error(
-      `[ProxyFetch] Unsupported ${source} protocol: ${parsed.protocol.replace(":", "")}`
-    );
-  }
-  if (!parsed.hostname) {
-    throw new Error(`[ProxyFetch] Invalid ${source} host`);
-  }
-
-  return parsed.toString();
-}
-
-function proxyConfigToUrl(proxyConfig) {
-  if (!proxyConfig) return null;
-
-  if (typeof proxyConfig === "string") {
-    return normalizeProxyUrl(proxyConfig, "context proxy");
-  }
-
-  if (typeof proxyConfig !== "object") {
-    throw new Error("[ProxyFetch] Invalid context proxy config");
-  }
-
-  const type = String(proxyConfig.type || "http").toLowerCase();
-  const protocol = `${type}:`;
-
-  if (UNSUPPORTED_SOCKS_PROTOCOLS.has(protocol)) {
-    throw new Error("[ProxyFetch] SOCKS/SOCKS5 proxies are not supported in outbound runtime");
-  }
-  if (!SUPPORTED_PROXY_PROTOCOLS.has(protocol)) {
-    throw new Error(`[ProxyFetch] Unsupported context proxy protocol: ${type}`);
-  }
-  if (!proxyConfig.host) {
-    throw new Error("[ProxyFetch] Context proxy host is required");
-  }
-
-  const port = String(proxyConfig.port || (type === "https" ? "443" : "8080"));
-  const proxyUrl = new URL(`${type}://${proxyConfig.host}:${port}`);
-
-  if (proxyConfig.username) {
-    proxyUrl.username = proxyConfig.username;
-    proxyUrl.password = proxyConfig.password || "";
-  }
-
-  return normalizeProxyUrl(proxyUrl.toString(), "context proxy");
 }
 
 function resolveEnvProxyUrl(targetUrl) {
@@ -153,15 +95,6 @@ function resolveProxyForRequest(targetUrl) {
   return { source: "direct", proxyUrl: null };
 }
 
-function getProxyDispatcher(proxyUrl) {
-  let dispatcher = dispatcherCache.get(proxyUrl);
-  if (!dispatcher) {
-    dispatcher = new ProxyAgent(proxyUrl);
-    dispatcherCache.set(proxyUrl, dispatcher);
-  }
-  return dispatcher;
-}
-
 function getTargetUrl(input) {
   if (typeof input === "string") return input;
   if (input && typeof input.url === "string") return input.url;
@@ -173,11 +106,13 @@ export async function runWithProxyContext(proxyConfig, fn) {
     throw new TypeError("runWithProxyContext requires a callback function");
   }
 
+  const resolvedProxyUrl = proxyConfig ? proxyConfigToUrl(proxyConfig) : null;
+
   return proxyContext.run(proxyConfig || null, async () => {
-    if (proxyConfig) {
-      const proxyUrl = proxyConfigToUrl(proxyConfig);
-      const parsed = new URL(proxyUrl);
-      console.log(`[ProxyFetch] Applied request proxy context: ${parsed.protocol}//${parsed.host}`);
+    if (resolvedProxyUrl) {
+      console.log(
+        `[ProxyFetch] Applied request proxy context: ${proxyUrlForLogs(resolvedProxyUrl)}`
+      );
     }
     return fn();
   });
@@ -204,7 +139,7 @@ async function patchedFetch(input, options = {}) {
   }
 
   try {
-    const dispatcher = getProxyDispatcher(proxyUrl);
+    const dispatcher = createProxyDispatcher(proxyUrl);
     return await originalFetch(input, { ...options, dispatcher });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

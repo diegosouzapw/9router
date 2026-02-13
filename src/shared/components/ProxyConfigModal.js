@@ -5,11 +5,15 @@ import PropTypes from "prop-types";
 import Modal from "./Modal";
 import Button from "./Button";
 
-const PROXY_TYPES = [
+const ALL_PROXY_TYPES = [
   { value: "http", label: "HTTP" },
   { value: "https", label: "HTTPS" },
   { value: "socks5", label: "SOCKS5" },
 ];
+const SOCKS5_UI_ENABLED = process.env.NEXT_PUBLIC_ENABLE_SOCKS5_PROXY === "true";
+const PROXY_TYPES = SOCKS5_UI_ENABLED
+  ? ALL_PROXY_TYPES
+  : ALL_PROXY_TYPES.filter((type) => type.value !== "socks5");
 
 const LEVEL_LABELS = {
   global: "Global",
@@ -30,7 +34,7 @@ const LEVEL_LABELS = {
  * @param {Function} [props.onSaved] — callback after save
  */
 export default function ProxyConfigModal({ isOpen, onClose, level, levelId, levelLabel, onSaved }) {
-  const [proxyType, setProxyType] = useState("http");
+  const [proxyType, setProxyType] = useState(PROXY_TYPES[0]?.value || "http");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("");
   const [username, setUsername] = useState("");
@@ -42,11 +46,15 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
   const [loading, setLoading] = useState(true);
   const [inheritedFrom, setInheritedFrom] = useState(null);
   const [hasOwnProxy, setHasOwnProxy] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  const getDefaultPort = (type) => (type === "socks5" ? "1080" : "8080");
 
   // Load existing proxy config when modal opens
   useEffect(() => {
     if (!isOpen) return;
     setTestResult(null);
+    setFormError(null);
     setLoading(true);
 
     const loadProxy = async () => {
@@ -59,13 +67,20 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
           const data = await res.json();
           const proxy = data.proxy;
           if (proxy && proxy.host) {
-            setProxyType(proxy.type || "http");
+            const normalizedType = String(proxy.type || "http").toLowerCase();
+            const hasTypeOption = PROXY_TYPES.some((entry) => entry.value === normalizedType);
+            setProxyType(hasTypeOption ? normalizedType : PROXY_TYPES[0]?.value || "http");
             setHost(proxy.host || "");
             setPort(proxy.port || "");
             setUsername(proxy.username || "");
             setPassword(proxy.password || "");
             setShowAuth(!!(proxy.username || proxy.password));
             setHasOwnProxy(true);
+            if (normalizedType === "socks5" && !SOCKS5_UI_ENABLED) {
+              setFormError(
+                "SOCKS5 is configured but hidden because NEXT_PUBLIC_ENABLE_SOCKS5_PROXY=false."
+              );
+            }
           } else {
             resetFields();
             setHasOwnProxy(false);
@@ -101,22 +116,24 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
   }, [isOpen, level, levelId]);
 
   const resetFields = () => {
-    setProxyType("http");
+    setProxyType(PROXY_TYPES[0]?.value || "http");
     setHost("");
     setPort("");
     setUsername("");
     setPassword("");
     setShowAuth(false);
+    setFormError(null);
   };
 
   const handleSave = async () => {
     if (!host.trim()) return;
+    setFormError(null);
     setSaving(true);
     try {
       const proxy = {
         type: proxyType,
         host: host.trim(),
-        port: port.trim() || (proxyType === "socks5" ? "1080" : "8080"),
+        port: port.trim() || getDefaultPort(proxyType),
         username: username.trim(),
         password: password.trim(),
       };
@@ -125,31 +142,40 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ level, id: levelId, proxy }),
       });
-      if (res.ok) {
-        setHasOwnProxy(true);
-        onSaved?.();
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFormError(payload?.error?.message || "Failed to save proxy configuration");
+        return;
       }
+      setHasOwnProxy(true);
+      onSaved?.();
     } catch (error) {
       console.error("Error saving proxy:", error);
+      setFormError(error.message || "Failed to save proxy configuration");
     } finally {
       setSaving(false);
     }
   };
 
   const handleClear = async () => {
+    setFormError(null);
     setSaving(true);
     try {
       const params = new URLSearchParams({ level });
       if (levelId) params.set("id", levelId);
       const res = await fetch(`/api/settings/proxy?${params}`, { method: "DELETE" });
-      if (res.ok) {
-        resetFields();
-        setHasOwnProxy(false);
-        setTestResult(null);
-        onSaved?.();
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFormError(payload?.error?.message || "Failed to clear proxy configuration");
+        return;
       }
+      resetFields();
+      setHasOwnProxy(false);
+      setTestResult(null);
+      onSaved?.();
     } catch (error) {
       console.error("Error clearing proxy:", error);
+      setFormError(error.message || "Failed to clear proxy configuration");
     } finally {
       setSaving(false);
     }
@@ -157,13 +183,14 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
 
   const handleTest = async () => {
     if (!host.trim()) return;
+    setFormError(null);
     setTesting(true);
     setTestResult(null);
     try {
       const proxy = {
         type: proxyType,
         host: host.trim(),
-        port: port.trim() || (proxyType === "socks5" ? "1080" : "8080"),
+        port: port.trim() || getDefaultPort(proxyType),
         username: username.trim(),
         password: password.trim(),
       };
@@ -172,40 +199,55 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proxy }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = data?.error?.message || "Connection failed";
+        setTestResult({ success: false, error: message });
+        setFormError(message);
+        return;
+      }
       setTestResult(data);
     } catch (error) {
       setTestResult({ success: false, error: error.message });
+      setFormError(error.message || "Connection failed");
     } finally {
       setTesting(false);
     }
   };
 
-  const title = level === "global"
-    ? "Global Proxy Configuration"
-    : `${LEVEL_LABELS[level]} Proxy — ${levelLabel || levelId || ""}`;
+  const title =
+    level === "global"
+      ? "Global Proxy Configuration"
+      : `${LEVEL_LABELS[level]} Proxy — ${levelLabel || levelId || ""}`;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} maxWidth="lg">
       {loading ? (
-        <div className="py-8 text-center text-text-muted animate-pulse">Loading proxy configuration...</div>
+        <div className="py-8 text-center text-text-muted animate-pulse">
+          Loading proxy configuration...
+        </div>
       ) : (
         <div className="flex flex-col gap-5">
           {/* Inheritance indicator */}
           {level !== "global" && !hasOwnProxy && inheritedFrom && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
-              <span className="material-symbols-outlined text-blue-400 text-base">subdirectory_arrow_right</span>
+              <span className="material-symbols-outlined text-blue-400 text-base">
+                subdirectory_arrow_right
+              </span>
               <span className="text-blue-300">
-                Inheriting from <strong>{inheritedFrom.level}</strong>: {inheritedFrom.proxy?.type}://{inheritedFrom.proxy?.host}:{inheritedFrom.proxy?.port}
+                Inheriting from <strong>{inheritedFrom.level}</strong>: {inheritedFrom.proxy?.type}
+                ://{inheritedFrom.proxy?.host}:{inheritedFrom.proxy?.port}
               </span>
             </div>
           )}
 
           {/* Proxy Type Selector */}
           <div>
-            <label className="text-xs text-text-muted mb-1.5 block uppercase tracking-wider font-medium">Proxy Type</label>
+            <label className="text-xs text-text-muted mb-1.5 block uppercase tracking-wider font-medium">
+              Proxy Type
+            </label>
             <div className="flex gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
-              {PROXY_TYPES.map(t => (
+              {PROXY_TYPES.map((t) => (
                 <button
                   key={t.value}
                   onClick={() => setProxyType(t.value)}
@@ -224,7 +266,9 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
           {/* Host + Port */}
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">
-              <label className="text-xs text-text-muted mb-1.5 block uppercase tracking-wider font-medium">Host</label>
+              <label className="text-xs text-text-muted mb-1.5 block uppercase tracking-wider font-medium">
+                Host
+              </label>
               <input
                 type="text"
                 value={host}
@@ -234,12 +278,14 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
               />
             </div>
             <div>
-              <label className="text-xs text-text-muted mb-1.5 block uppercase tracking-wider font-medium">Port</label>
+              <label className="text-xs text-text-muted mb-1.5 block uppercase tracking-wider font-medium">
+                Port
+              </label>
               <input
                 type="text"
                 value={port}
                 onChange={(e) => setPort(e.target.value)}
-                placeholder={proxyType === "socks5" ? "1080" : "8080"}
+                placeholder={getDefaultPort(proxyType)}
                 className="w-full px-3 py-2.5 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary transition-colors"
               />
             </div>
@@ -259,7 +305,9 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
             {showAuth && (
               <div className="grid grid-cols-2 gap-3 mt-3">
                 <div>
-                  <label className="text-xs text-text-muted mb-1.5 block uppercase tracking-wider font-medium">Username</label>
+                  <label className="text-xs text-text-muted mb-1.5 block uppercase tracking-wider font-medium">
+                    Username
+                  </label>
                   <input
                     type="text"
                     value={username}
@@ -269,7 +317,9 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted mb-1.5 block uppercase tracking-wider font-medium">Password</label>
+                  <label className="text-xs text-text-muted mb-1.5 block uppercase tracking-wider font-medium">
+                    Password
+                  </label>
                   <input
                     type="password"
                     value={password}
@@ -283,15 +333,25 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
           </div>
 
           {/* Test Result */}
+          {formError && (
+            <div className="px-4 py-3 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-400">
+              {formError}
+            </div>
+          )}
+
           {testResult && (
-            <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
-              testResult.success
-                ? "bg-emerald-500/10 border-emerald-500/30"
-                : "bg-red-500/10 border-red-500/30"
-            }`}>
-              <span className={`material-symbols-outlined text-xl ${
-                testResult.success ? "text-emerald-400" : "text-red-400"
-              }`}>
+            <div
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
+                testResult.success
+                  ? "bg-emerald-500/10 border-emerald-500/30"
+                  : "bg-red-500/10 border-red-500/30"
+              }`}
+            >
+              <span
+                className={`material-symbols-outlined text-xl ${
+                  testResult.success ? "text-emerald-400" : "text-red-400"
+                }`}
+              >
                 {testResult.success ? "check_circle" : "error"}
               </span>
               <div className="flex-1">
@@ -306,7 +366,11 @@ export default function ProxyConfigModal({ isOpen, onClose, level, levelId, leve
                 ) : (
                   <div className="text-sm text-red-400">
                     {testResult.error || "Connection failed"}
-                    {testResult.latencyMs && <span className="text-text-muted text-xs ml-2">({testResult.latencyMs}ms)</span>}
+                    {testResult.latencyMs && (
+                      <span className="text-text-muted text-xs ml-2">
+                        ({testResult.latencyMs}ms)
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
