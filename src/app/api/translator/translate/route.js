@@ -6,13 +6,27 @@ import { getProviderConnections } from "@/lib/localDb.js";
 
 export async function POST(request) {
   try {
-    const { step, provider, body } = await request.json();
+    const reqData = await request.json();
+    const { step, provider, body, sourceFormat: reqSourceFormat, targetFormat: reqTargetFormat } = reqData;
 
-    if (!step || !provider || !body) {
-      return NextResponse.json({ success: false, error: "Step, provider, and body required" }, { status: 400 });
+    if (!body) {
+      return NextResponse.json({ success: false, error: "Body is required" }, { status: 400 });
     }
 
     let result;
+
+    // Direct translation mode (Playground): sourceFormat → targetFormat in one shot
+    if (step === "direct") {
+      const src = reqSourceFormat || detectFormat(body);
+      const tgt = reqTargetFormat || "openai";
+      const model = body.model || "test-model";
+      const translated = translateRequest(src, tgt, model, body, true, null, provider);
+      return NextResponse.json({ success: true, result: translated });
+    }
+
+    if (!step || !provider) {
+      return NextResponse.json({ success: false, error: "Step and provider are required" }, { status: 400 });
+    }
 
     switch (step) {
       case 1: {
