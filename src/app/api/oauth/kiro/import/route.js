@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection, isCloudEnabled } from "@/models";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { syncToCloud } from "@/lib/cloudSync";
 
 /**
  * POST /api/oauth/kiro/import
@@ -13,10 +13,7 @@ export async function POST(request) {
     const { refreshToken } = await request.json();
 
     if (!refreshToken || typeof refreshToken !== "string") {
-      return NextResponse.json(
-        { error: "Refresh token is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Refresh token is required" }, { status: 400 });
     }
 
     const kiroService = new KiroService();

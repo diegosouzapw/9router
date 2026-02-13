@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { getTranslationEvents, logTranslationEvent } from "@/lib/translatorEvents.js";
+import { getTranslationEvents } from "@/lib/translatorEvents.js";
 
 /**
  * GET /api/translator/history
  * Returns recent translation events for the Live Monitor.
  */
-
-export { logTranslationEvent };
 
 export async function GET(request) {
   try {

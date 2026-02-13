@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getPricing, updatePricing, resetPricing, resetAllPricing } from "@/lib/localDb.js";
-import { getDefaultPricing } from "@/shared/constants/pricing.js";
 
 /**
  * GET /api/pricing
@@ -12,10 +11,7 @@ export async function GET() {
     return NextResponse.json(pricing);
   } catch (error) {
     console.error("Error fetching pricing:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch pricing" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch pricing" }, { status: 500 });
   }
 }
 
@@ -30,10 +26,7 @@ export async function PATCH(request) {
 
     // Validate body structure
     if (typeof body !== "object" || body === null) {
-      return NextResponse.json(
-        { error: "Invalid pricing data format" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid pricing data format" }, { status: 400 });
     }
 
     // Validate pricing structure
@@ -64,7 +57,9 @@ export async function PATCH(request) {
           }
           if (typeof value !== "number" || isNaN(value) || value < 0) {
             return NextResponse.json(
-              { error: `Invalid pricing value for ${key} in ${provider}/${model}: must be non-negative number` },
+              {
+                error: `Invalid pricing value for ${key} in ${provider}/${model}: must be non-negative number`,
+              },
               { status: 400 }
             );
           }
@@ -76,10 +71,7 @@ export async function PATCH(request) {
     return NextResponse.json(updatedPricing);
   } catch (error) {
     console.error("Error updating pricing:", error);
-    return NextResponse.json(
-      { error: "Failed to update pricing" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to update pricing" }, { status: 500 });
   }
 }
 
@@ -109,26 +101,6 @@ export async function DELETE(request) {
     return NextResponse.json(pricing);
   } catch (error) {
     console.error("Error resetting pricing:", error);
-    return NextResponse.json(
-      { error: "Failed to reset pricing" },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * GET /api/pricing/defaults
- * Get default pricing configuration
- */
-export async function GET_DEFAULTS() {
-  try {
-    const defaultPricing = getDefaultPricing();
-    return NextResponse.json(defaultPricing);
-  } catch (error) {
-    console.error("Error fetching default pricing:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch default pricing" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to reset pricing" }, { status: 500 });
   }
 }
