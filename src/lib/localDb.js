@@ -2,7 +2,7 @@
  * localDb.js — Re-export layer for backward compatibility.
  *
  * All 27+ consumer files import from "@/lib/localDb".
- * This thin layer re-exports everything from the new SQLite backend,
+ * This thin layer re-exports everything from the domain-specific DB modules,
  * so zero consumer changes are needed.
  */
 
@@ -23,7 +23,9 @@ export {
   createProviderNode,
   updateProviderNode,
   deleteProviderNode,
+} from "./db/providers.js";
 
+export {
   // Model Aliases
   getModelAliases,
   setModelAlias,
@@ -33,6 +35,14 @@ export {
   getMitmAlias,
   setMitmAliasAll,
 
+  // Custom Models
+  getCustomModels,
+  getAllCustomModels,
+  addCustomModel,
+  removeCustomModel,
+} from "./db/models.js";
+
+export {
   // Combos
   getCombos,
   getComboById,
@@ -40,14 +50,18 @@ export {
   createCombo,
   updateCombo,
   deleteCombo,
+} from "./db/combos.js";
 
+export {
   // API Keys
   getApiKeys,
   createApiKey,
   deleteApiKey,
   validateApiKey,
   getApiKeyMetadata,
+} from "./db/apiKeys.js";
 
+export {
   // Settings
   getSettings,
   updateSettings,
@@ -60,12 +74,6 @@ export {
   resetPricing,
   resetAllPricing,
 
-  // Custom Models
-  getCustomModels,
-  getAllCustomModels,
-  addCustomModel,
-  removeCustomModel,
-
   // Proxy Config
   getProxyConfig,
   getProxyForLevel,
@@ -73,9 +81,11 @@ export {
   deleteProxyForLevel,
   resolveProxyForConnection,
   setProxyConfig,
+} from "./db/settings.js";
 
+export {
   // Backup Management
   backupDbFile,
   listDbBackups,
   restoreDbBackup,
-} from "./sqliteDb.js";
+} from "./db/backup.js";
