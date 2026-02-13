@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
-);
+if (!process.env.JWT_SECRET) {
+  throw new Error(
+    "[9router] FATAL: JWT_SECRET environment variable is not set. " +
+    "Please set it in your .env file. Aborting for security."
+  );
+}
+const SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;

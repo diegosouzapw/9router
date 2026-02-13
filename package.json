@@ -9,8 +9,9 @@
     "start": "next start --port 20128",
     "lint": "eslint .",
     "test:plan3": "node --test tests/plan3-p0.test.mjs",
-    "test": "npm run build",
-    "check": "npm run lint && npm run test"
+    "test": "node --loader ./tests/loader.mjs --test tests/**/*.test.mjs",
+    "test:ci": "npm run lint && npm run test && npm run build",
+    "check": "npm run test:ci"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
