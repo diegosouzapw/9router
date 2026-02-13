@@ -23,7 +23,7 @@ const debugItems = [
 ];
 
 const systemItems = [
-  { href: "/dashboard/profile", label: "Settings", icon: "settings" },
+  { href: "/dashboard/settings", label: "Settings", icon: "settings" },
 ];
 
 const helpItems = [
