@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, Select, Badge } from "@/shared/components";
-import { FORMAT_META, FORMAT_OPTIONS } from "../data/exampleTemplates";
+import { FORMAT_META, FORMAT_OPTIONS } from "../exampleTemplates";
 import { AI_PROVIDERS, OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 import dynamic from "next/dynamic";
 
@@ -46,12 +46,23 @@ export default function ChatTesterMode() {
           return { value: pid, label };
         }).sort((a, b) => a.label.localeCompare(b.label));
 
-        setProviderOptions(options.length > 0 ? options : Object.entries(AI_PROVIDERS).map(([id, info]) => ({ value: id, label: info.name })));
-        if (options.length > 0 && !options.find((o) => o.value === provider)) {
-          setProvider(options[0].value);
+        const nextOptions = options.length > 0
+          ? options
+          : Object.entries(AI_PROVIDERS).map(([id, info]) => ({ value: id, label: info.name }));
+        setProviderOptions(nextOptions);
+        if (nextOptions.length > 0) {
+          setProvider((current) =>
+            nextOptions.some((opt) => opt.value === current) ? current : nextOptions[0].value
+          );
         }
       } catch {
-        setProviderOptions(Object.entries(AI_PROVIDERS).map(([id, info]) => ({ value: id, label: info.name })));
+        const fallbackOptions = Object.entries(AI_PROVIDERS).map(([id, info]) => ({ value: id, label: info.name }));
+        setProviderOptions(fallbackOptions);
+        if (fallbackOptions.length > 0) {
+          setProvider((current) =>
+            fallbackOptions.some((opt) => opt.value === current) ? current : fallbackOptions[0].value
+          );
+        }
       }
     };
     fetchProviders();
@@ -94,6 +105,16 @@ export default function ChatTesterMode() {
             role: m.role === "assistant" ? "model" : "user",
             parts: [{ text: m.content }],
           })),
+        };
+      } else if (clientFormat === "openai-responses") {
+        clientRequest = {
+          model: "gpt-4o",
+          input: allMessages.map((m) => ({
+            type: "message",
+            role: m.role,
+            content: [{ type: "input_text", text: m.content }],
+          })),
+          stream: true,
         };
       } else {
         clientRequest = {
@@ -148,10 +169,10 @@ export default function ChatTesterMode() {
       const providerTargetRes = await fetch("/api/translator/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step: "direct", sourceFormat: "openai", targetFormat: getProviderFormat(provider), provider, body: toOpenaiData.result }),
+        body: JSON.stringify({ step: "direct", sourceFormat: "openai", provider, body: toOpenaiData.result }),
       });
       const providerTargetData = await providerTargetRes.json();
-      const targetFmt = getProviderFormat(provider);
+      const targetFmt = providerTargetData.targetFormat || "openai";
 
       steps.push({
         id: 4,
@@ -383,15 +404,6 @@ export default function ChatTesterMode() {
       </div>
     </div>
   );
-}
-
-/** Guess provider target format */
-function getProviderFormat(provider) {
-  if (provider === "anthropic" || provider?.includes("anthropic")) return "claude";
-  if (provider === "google" || provider?.includes("google") || provider?.includes("gemini")) return "gemini";
-  if (provider?.includes("kiro")) return "kiro";
-  if (provider?.includes("cursor")) return "cursor";
-  return "openai";
 }
 
 /** Extract assistant text from SSE stream */

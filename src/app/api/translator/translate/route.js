@@ -18,10 +18,10 @@ export async function POST(request) {
     // Direct translation mode (Playground): sourceFormat → targetFormat in one shot
     if (step === "direct") {
       const src = reqSourceFormat || detectFormat(body);
-      const tgt = reqTargetFormat || "openai";
+      const tgt = reqTargetFormat || (provider ? getTargetFormat(provider) : "openai");
       const model = body.model || "test-model";
       const translated = translateRequest(src, tgt, model, body, true, null, provider);
-      return NextResponse.json({ success: true, result: translated });
+      return NextResponse.json({ success: true, sourceFormat: src, targetFormat: tgt, result: translated });
     }
 
     if (!step || !provider) {

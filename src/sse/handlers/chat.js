@@ -7,15 +7,18 @@ import {
 } from "../services/auth.js";
 import { getModelInfo, getCombo } from "../services/model.js";
 import { parseModel } from "open-sse/services/model.js";
+import { detectFormat, getTargetFormat } from "open-sse/services/provider.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import { HTTP_STATUS } from "open-sse/config/constants.js";
+import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getSettings, getCombos, getApiKeyMetadata } from "../../lib/localDb.js";
 import { resolveProxyForConnection } from "../../lib/localDb.js";
 import { logProxyEvent } from "../../lib/proxyLogger.js";
+import { logTranslationEvent } from "../../lib/translatorEvents.js";
 
 /**
  * Handle chat completion request
@@ -143,6 +146,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+  const sourceFormat = detectFormat(body);
+  const providerAlias = PROVIDER_ID_TO_ALIAS[provider] || provider;
+  const targetFormat = getModelTargetFormat(providerAlias, model) || getTargetFormat(provider);
 
   // Log model routing (alias → actual model)
   if (modelStr !== `${provider}/${model}`) {
@@ -237,6 +243,24 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         account: credentials.connectionId?.slice(0, 8) || null,
       });
     } catch (logErr) {
+      // Never let logging break the request pipeline
+    }
+
+    // Log translation event for Live Monitor
+    try {
+      logTranslationEvent({
+        provider,
+        model,
+        sourceFormat,
+        targetFormat,
+        status: result.success ? "success" : "error",
+        statusCode: result.success ? 200 : (result.status || 500),
+        latency: proxyLatency,
+        endpoint: clientRawRequest?.endpoint || "/v1/chat/completions",
+        connectionId: credentials.connectionId || null,
+        comboName: comboName || null,
+      });
+    } catch {
       // Never let logging break the request pipeline
     }
     

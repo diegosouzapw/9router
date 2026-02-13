@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Card, Button, Select, Badge } from "@/shared/components";
-import { EXAMPLE_TEMPLATES, FORMAT_META } from "../data/exampleTemplates";
+import { EXAMPLE_TEMPLATES, FORMAT_META } from "../exampleTemplates";
 import { AI_PROVIDERS, OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 
 /**
@@ -43,9 +43,23 @@ export default function TestBenchMode() {
           if (!info && pid.startsWith(ANTHROPIC_COMPATIBLE_PREFIX)) label = node?.name || "Anthropic Compatible";
           return { value: pid, label };
         }).sort((a, b) => a.label.localeCompare(b.label));
-        setProviderOptions(options.length > 0 ? options : Object.entries(AI_PROVIDERS).map(([id, info]) => ({ value: id, label: info.name })));
+        const nextOptions = options.length > 0
+          ? options
+          : Object.entries(AI_PROVIDERS).map(([id, info]) => ({ value: id, label: info.name }));
+        setProviderOptions(nextOptions);
+        if (nextOptions.length > 0) {
+          setProvider((current) =>
+            nextOptions.some((opt) => opt.value === current) ? current : nextOptions[0].value
+          );
+        }
       } catch {
-        setProviderOptions(Object.entries(AI_PROVIDERS).map(([id, info]) => ({ value: id, label: info.name })));
+        const fallbackOptions = Object.entries(AI_PROVIDERS).map(([id, info]) => ({ value: id, label: info.name }));
+        setProviderOptions(fallbackOptions);
+        if (fallbackOptions.length > 0) {
+          setProvider((current) =>
+            fallbackOptions.some((opt) => opt.value === current) ? current : fallbackOptions[0].value
+          );
+        }
       }
     };
     fetchProviders();
@@ -69,7 +83,7 @@ export default function TestBenchMode() {
       const translateRes = await fetch("/api/translator/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step: "direct", sourceFormat, targetFormat: getProviderFormat(provider), provider, body }),
+        body: JSON.stringify({ step: "direct", sourceFormat, provider, body }),
       });
       const translateData = await translateRes.json();
 
@@ -266,12 +280,4 @@ export default function TestBenchMode() {
       </div>
     </div>
   );
-}
-
-function getProviderFormat(provider) {
-  if (provider === "anthropic" || provider?.includes("anthropic")) return "claude";
-  if (provider === "google" || provider?.includes("google") || provider?.includes("gemini")) return "gemini";
-  if (provider?.includes("kiro")) return "kiro";
-  if (provider?.includes("cursor")) return "cursor";
-  return "openai";
 }

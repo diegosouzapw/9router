@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Card, Badge } from "@/shared/components";
-import { FORMAT_META } from "../data/exampleTemplates";
+import { FORMAT_META } from "../exampleTemplates";
 
 /**
  * Live Monitor Mode:

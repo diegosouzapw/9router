@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { Card, Button, Select, Badge } from "@/shared/components";
-import { EXAMPLE_TEMPLATES, FORMAT_META, FORMAT_OPTIONS } from "../data/exampleTemplates";
+import { EXAMPLE_TEMPLATES, FORMAT_META, FORMAT_OPTIONS } from "../exampleTemplates";
 import dynamic from "next/dynamic";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
