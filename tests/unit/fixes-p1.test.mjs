@@ -14,7 +14,28 @@ const combosDb = await import("../../src/lib/db/combos.js");
 const settingsDb = await import("../../src/lib/db/settings.js");
 const tokenRefresh = await import("../../open-sse/services/tokenRefresh.js");
 const proxyFetch = await import("../../open-sse/utils/proxyFetch.js");
+const proxyDispatcher = await import("../../open-sse/utils/proxyDispatcher.js");
+const proxySettingsRoute = await import("../../src/app/api/settings/proxy/route.js");
 const proxyTestRoute = await import("../../src/app/api/settings/proxy/test/route.js");
+
+async function withEnv(name, value, fn) {
+  const previous = process.env[name];
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+
+  try {
+    return await fn();
+  } finally {
+    if (previous === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = previous;
+    }
+  }
+}
 
 async function resetStorage() {
   core.resetDbInstance();
@@ -149,6 +170,35 @@ test("resolveProxyForConnection applies combo proxy for object/string model entr
   assert.equal(resolved.levelId, combo.id);
 });
 
+test("normalizeProxyUrl accepts socks5 only when explicitly allowed", () => {
+  const socksUrl = "socks5://127.0.0.1:1080";
+
+  const normalized = proxyDispatcher.normalizeProxyUrl(socksUrl, "test proxy", {
+    allowSocks5: true,
+  });
+  assert.match(normalized, /^socks5:\/\/127\.0\.0\.1:1080\/?$/);
+
+  assert.throws(
+    () =>
+      proxyDispatcher.normalizeProxyUrl(socksUrl, "test proxy", {
+        allowSocks5: false,
+      }),
+    /SOCKS5 proxy is disabled/i
+  );
+});
+
+test("createProxyDispatcher builds dispatchers for http, https, and socks5", async () => {
+  await withEnv("ENABLE_SOCKS5_PROXY", "true", async () => {
+    const httpDispatcher = proxyDispatcher.createProxyDispatcher("http://127.0.0.1:8080");
+    const httpsDispatcher = proxyDispatcher.createProxyDispatcher("https://127.0.0.1:8443");
+    const socksDispatcher = proxyDispatcher.createProxyDispatcher("socks5://127.0.0.1:1080");
+
+    assert.equal(typeof httpDispatcher.dispatch, "function");
+    assert.equal(typeof httpsDispatcher.dispatch, "function");
+    assert.equal(typeof socksDispatcher.dispatch, "function");
+  });
+});
+
 test("proxy fetch fails closed when context proxy is invalid", async () => {
   await assert.rejects(
     proxyFetch.runWithProxyContext({ type: "http", host: "127.0.0.1", port: "9" }, async () =>
@@ -157,31 +207,117 @@ test("proxy fetch fails closed when context proxy is invalid", async () => {
   );
 });
 
-test("proxy fetch rejects socks5 context explicitly", async () => {
-  await assert.rejects(
-    proxyFetch.runWithProxyContext({ type: "socks5", host: "127.0.0.1", port: "1080" }, async () =>
-      fetch("https://example.com")
-    ),
-    /SOCKS\/SOCKS5/
-  );
+test("proxy fetch rejects socks5 context when feature flag is disabled", async () => {
+  await withEnv("ENABLE_SOCKS5_PROXY", "false", async () => {
+    await assert.rejects(
+      proxyFetch.runWithProxyContext(
+        { type: "socks5", host: "127.0.0.1", port: "1080" },
+        async () => fetch("https://example.com")
+      ),
+      /ENABLE_SOCKS5_PROXY/i
+    );
+  });
 });
 
-test("proxy test route rejects socks5 with 400", async () => {
-  const request = new Request("http://localhost/api/settings/proxy/test", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      proxy: {
-        type: "socks5",
-        host: "127.0.0.1",
-        port: "1080",
-      },
-    }),
+test("proxy fetch accepts socks5 context when feature flag is enabled", async () => {
+  await withEnv("ENABLE_SOCKS5_PROXY", "true", async () => {
+    const result = await proxyFetch.runWithProxyContext(
+      { type: "socks5", host: "127.0.0.1", port: "1080" },
+      async () => "ok"
+    );
+    assert.equal(result, "ok");
   });
+});
 
-  const response = await proxyTestRoute.POST(request);
-  const payload = await response.json();
+test("proxy settings route blocks socks5 with backend flag disabled", async () => {
+  await resetStorage();
 
-  assert.equal(response.status, 400);
-  assert.match(payload.error.message, /SOCKS\/SOCKS5/i);
+  await withEnv("ENABLE_SOCKS5_PROXY", "false", async () => {
+    const request = new Request("http://localhost/api/settings/proxy", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        level: "global",
+        proxy: {
+          type: "socks5",
+          host: "127.0.0.1",
+          port: "1080",
+        },
+      }),
+    });
+
+    const response = await proxySettingsRoute.PUT(request);
+    const payload = await response.json();
+    assert.equal(response.status, 400);
+    assert.match(payload.error.message, /SOCKS5 proxy is disabled/i);
+  });
+});
+
+test("proxy settings route accepts socks5 with backend flag enabled", async () => {
+  await resetStorage();
+
+  await withEnv("ENABLE_SOCKS5_PROXY", "true", async () => {
+    const request = new Request("http://localhost/api/settings/proxy", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        level: "global",
+        proxy: {
+          type: "SOCKS5",
+          host: "127.0.0.1",
+          port: "1080",
+        },
+      }),
+    });
+
+    const response = await proxySettingsRoute.PUT(request);
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.global.type, "socks5");
+  });
+});
+
+test("proxy test route rejects socks5 when backend flag is disabled", async () => {
+  await withEnv("ENABLE_SOCKS5_PROXY", "false", async () => {
+    const request = new Request("http://localhost/api/settings/proxy/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        proxy: {
+          type: "socks5",
+          host: "127.0.0.1",
+          port: "1080",
+        },
+      }),
+    });
+
+    const response = await proxyTestRoute.POST(request);
+    const payload = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(payload.error.message, /SOCKS5 proxy is disabled/i);
+  });
+});
+
+test("proxy test route runs socks5 test when backend flag is enabled", async () => {
+  await withEnv("ENABLE_SOCKS5_PROXY", "true", async () => {
+    const request = new Request("http://localhost/api/settings/proxy/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        proxy: {
+          type: "socks5",
+          host: "127.0.0.1",
+          port: "1",
+        },
+      }),
+    });
+
+    const response = await proxyTestRoute.POST(request);
+    const payload = await response.json();
+
+    assert.notEqual(response.status, 400);
+    assert.equal(payload.success, false);
+    assert.equal(payload.proxyUrl, "socks5://127.0.0.1:1");
+  });
 });

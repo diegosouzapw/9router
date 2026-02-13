@@ -89,6 +89,9 @@ reqLog.info("AUTH", "Token refreshed", { provider: "claude" });
 - All configurable values should read from `process.env` with a fallback default
 - Document new env vars in `.env.example`
 - Sensitive values (secrets, tokens) must **never** be hardcoded in source
+- Proxy feature flags:
+  - `ENABLE_SOCKS5_PROXY` controls backend acceptance/runtime for SOCKS5
+  - `NEXT_PUBLIC_ENABLE_SOCKS5_PROXY` controls SOCKS5 visibility in UI
 
 ## Git Workflow
 
