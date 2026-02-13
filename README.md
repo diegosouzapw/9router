@@ -713,38 +713,38 @@ docker stop 9router && docker rm 9router
 
 ### Environment Variables
 
-| Variable                                             | Default                            | Description                                                                         |
-| ---------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
-| `JWT_SECRET`                                         | `9router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**)             |
-| `INITIAL_PASSWORD`                                   | `123456`                           | First login password when no saved hash exists                                      |
-| `DATA_DIR`                                           | `~/.9router`                       | Primary data directory (`db.json`, `usage.json`, `log.txt`, `call_logs/`)           |
+| Variable                                             | Default                            | Description                                                                            |
+| ---------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | `9router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**)                |
+| `INITIAL_PASSWORD`                                   | `123456`                           | First login password when no saved hash exists                                         |
+| `DATA_DIR`                                           | `~/.9router`                       | Primary data directory (`db.json`, `usage.json`, `log.txt`, `call_logs/`)              |
 | `XDG_CONFIG_HOME`                                    | unset                              | Optional base dir on Linux/macOS when `DATA_DIR` is unset (`$XDG_CONFIG_HOME/9router`) |
-| `PORT`                                               | framework default                  | Service port (`20128` in examples)                                                  |
-| `HOSTNAME`                                           | framework default                  | Bind host (Docker defaults to `0.0.0.0`)                                            |
-| `NODE_ENV`                                           | runtime default                    | Set `production` for deploy                                                         |
-| `BASE_URL`                                           | `http://localhost:20128`           | Server-side internal base URL used by cloud sync jobs                               |
-| `CLOUD_URL`                                          | `https://9router.com`              | Server-side cloud sync endpoint base URL                                            |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`            | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime)          |
-| `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`              | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime)        |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`    | HMAC secret for generated API keys                                                  |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`              | Salt for stable machine ID hashing                                                  |
-| `ENABLE_REQUEST_LOGS`                                | `false`                            | Enables request/response logs under `logs/`                                         |
-| `AUTH_COOKIE_SECURE`                                 | `false`                            | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy)                  |
-| `REQUIRE_API_KEY`                                    | `false`                            | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
-| `ALLOW_MULTI_CONNECTIONS_PER_COMPAT_NODE`            | `false`                            | Allow multiple connections for each OpenAI/Anthropic-compatible custom node           |
-| `CLI_MODE`                                           | `auto`                             | CLI runtime profile: `auto`, `host`, or `container`                                 |
-| `CLI_EXTRA_PATHS`                                    | empty                              | Extra `PATH` entries used for CLI detection/healthcheck (split by `:` on Linux)     |
-| `CLI_CONFIG_HOME`                                    | runtime home (`os.homedir`)        | Base directory used to read/write CLI config files                                  |
-| `CLI_ALLOW_CONFIG_WRITES`                            | `true`                             | If `false`, `/api/cli-tools/*` `POST`/`DELETE` return `403`                         |
-| `CLI_CLAUDE_BIN`                                     | `claude`                           | Override command/path used for Claude CLI detection                                 |
-| `CLI_CODEX_BIN`                                      | `codex`                            | Override command/path used for Codex CLI detection                                  |
-| `CLI_DROID_BIN`                                      | `droid`                            | Override command/path used for Droid CLI detection                                  |
-| `CLI_OPENCLAW_BIN`                                   | `openclaw`                         | Override command/path used for OpenClaw CLI detection                               |
-| `CLI_CURSOR_BIN`                                     | `agent`                            | Override command/path used for Cursor Agent detection (`agent`, fallback `cursor`)  |
-| `CLI_CLINE_BIN`                                      | empty                              | Optional override for Cline runtime detection (set `cline` if you have local CLI)   |
-| `CLI_ROO_BIN`                                        | empty                              | Optional override for Roo runtime detection                                         |
-| `CLI_CONTINUE_BIN`                                   | empty                              | Optional override for Continue runtime detection (commonly `cn`)                    |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                              | Optional outbound proxy for upstream provider calls                                 |
+| `PORT`                                               | framework default                  | Service port (`20128` in examples)                                                     |
+| `HOSTNAME`                                           | framework default                  | Bind host (Docker defaults to `0.0.0.0`)                                               |
+| `NODE_ENV`                                           | runtime default                    | Set `production` for deploy                                                            |
+| `BASE_URL`                                           | `http://localhost:20128`           | Server-side internal base URL used by cloud sync jobs                                  |
+| `CLOUD_URL`                                          | `https://9router.com`              | Server-side cloud sync endpoint base URL                                               |
+| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`            | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime)             |
+| `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`              | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime)           |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`    | HMAC secret for generated API keys                                                     |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`              | Salt for stable machine ID hashing                                                     |
+| `ENABLE_REQUEST_LOGS`                                | `false`                            | Enables request/response logs under `logs/`                                            |
+| `AUTH_COOKIE_SECURE`                                 | `false`                            | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy)                     |
+| `REQUIRE_API_KEY`                                    | `false`                            | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys)    |
+| `ALLOW_MULTI_CONNECTIONS_PER_COMPAT_NODE`            | `false`                            | Allow multiple connections for each OpenAI/Anthropic-compatible custom node            |
+| `CLI_MODE`                                           | `auto`                             | CLI runtime profile: `auto`, `host`, or `container`                                    |
+| `CLI_EXTRA_PATHS`                                    | empty                              | Extra `PATH` entries used for CLI detection/healthcheck (split by `:` on Linux)        |
+| `CLI_CONFIG_HOME`                                    | runtime home (`os.homedir`)        | Base directory used to read/write CLI config files                                     |
+| `CLI_ALLOW_CONFIG_WRITES`                            | `true`                             | If `false`, `/api/cli-tools/*` `POST`/`DELETE` return `403`                            |
+| `CLI_CLAUDE_BIN`                                     | `claude`                           | Override command/path used for Claude CLI detection                                    |
+| `CLI_CODEX_BIN`                                      | `codex`                            | Override command/path used for Codex CLI detection                                     |
+| `CLI_DROID_BIN`                                      | `droid`                            | Override command/path used for Droid CLI detection                                     |
+| `CLI_OPENCLAW_BIN`                                   | `openclaw`                         | Override command/path used for OpenClaw CLI detection                                  |
+| `CLI_CURSOR_BIN`                                     | `agent`                            | Override command/path used for Cursor Agent detection (`agent`, fallback `cursor`)     |
+| `CLI_CLINE_BIN`                                      | empty                              | Optional override for Cline runtime detection (set `cline` if you have local CLI)      |
+| `CLI_ROO_BIN`                                        | empty                              | Optional override for Roo runtime detection                                            |
+| `CLI_CONTINUE_BIN`                                   | empty                              | Optional override for Continue runtime detection (commonly `cn`)                       |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                              | Optional outbound proxy for upstream provider calls                                    |
 
 Notes:
 
@@ -1061,9 +1061,14 @@ Types: `chat`, `embedding`, `image`. Custom models are flagged with `custom: tru
 - **Runtime**: Node.js 20+
 - **Framework**: Next.js 16
 - **UI**: React 19 + Tailwind CSS 4
+- **Charts**: Recharts (SVG, accessible)
 - **Database**: LowDB (JSON file-based)
 - **Streaming**: Server-Sent Events (SSE)
 - **Auth**: OAuth 2.0 (PKCE) + JWT + API Keys
+- **Testing**: Playwright (E2E) + Node.js test runner (unit)
+- **Monorepo**: npm workspaces (`@9router/open-sse`)
+- **CI/CD**: Dependabot (weekly npm + GH Actions)
+- **Compliance**: `/terms` and `/privacy` pages
 
 ---
 

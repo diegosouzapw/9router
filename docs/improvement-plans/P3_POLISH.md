@@ -9,12 +9,12 @@
 
 ## Checklist Geral
 
-- [ ] 20. Extrair `open-sse/` como workspace package
-- [ ] 21. Adicionar testes E2E com Playwright
-- [ ] 22. Remover código morto (`RequestLogger.js` V1)
-- [ ] 23. Adicionar Dependabot/Renovate
-- [ ] 24. Implementar páginas `/terms` e `/privacy`
-- [ ] 25. Adotar gráficos acessíveis (Recharts/Visx)
+- [x] 20. Extrair `open-sse/` como workspace package
+- [x] 21. Adicionar testes E2E com Playwright
+- [x] 22. Remover código morto (`RequestLogger.js` V1)
+- [x] 23. Adicionar Dependabot/Renovate
+- [x] 24. Implementar páginas `/terms` e `/privacy`
+- [x] 25. Adotar gráficos acessíveis (Recharts/Visx)
 
 ---
 

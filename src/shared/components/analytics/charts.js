@@ -9,18 +9,7 @@ import {
   fmtCost,
   formatApiKeyLabel as maskApiKeyLabel,
 } from "@/shared/utils/formatting";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-  PieChart,
-  Pie,
-  Legend,
-} from "recharts";
+import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 
 // ── Custom Tooltip for dark theme ──────────────────────────────────────────
 

@@ -99,6 +99,19 @@ reqLog.info("AUTH", "Token refreshed", { provider: "claude" });
 
 ## Testing
 
-- Run syntax checks before committing: `node --check <file>`
-- Test streaming with: `tester/translator/testFromFile.js`
+- **Unit tests** (Node.js test runner): `npm run test:plan3`
+- **E2E tests** (Playwright): `npm run test:e2e`
+- **Build check**: `npm test` (alias for `npm run build`)
+- **Syntax checks**: `node --check <file>`
+- **Manual streaming test**: `tester/translator/testFromFile.js`
 - Test credentials with the dashboard UI or API endpoints
+
+## Workspace
+
+The `open-sse/` directory is an **npm workspace** published as `@9router/open-sse`. In source code, import it via:
+
+```js
+import { translateRequest } from "@9router/open-sse/translator";
+```
+
+Next.js transpiles the workspace via `transpilePackages` in `next.config.mjs`.
