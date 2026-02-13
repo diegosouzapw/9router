@@ -76,3 +76,8 @@ package-lock.json
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
 README1.md
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/

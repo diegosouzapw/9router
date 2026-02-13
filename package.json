@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "test:plan3": "node --test tests/unit/plan3-p0.test.mjs",
     "test": "npm run build",
+    "test:e2e": "npx playwright test",
     "check": "npm run lint && npm run test",
     "prepare": "husky"
   },
@@ -45,6 +46,7 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.2.3",
